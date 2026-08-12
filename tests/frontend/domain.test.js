@@ -2,9 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  assessmentMatchesPendingPostcondition,
+  bindPendingWrite,
+  claimMatchesPendingPostcondition,
   claimMatchesIntent,
   formatCents,
   parseContractJson,
+  pendingMatchesDeployment,
   receiptFinalized,
   receiptSucceeded,
   validateAwardId,
@@ -12,6 +16,7 @@ import {
 } from "../../src/domain.js";
 
 const awardId = "CONT_AWD_47PF0021C0003_4740_-NONE-_-NONE-";
+const deployment = { ready: true, address: "0x1111111111111111111111111111111111111111" };
 
 test("award IDs normalize without accepting a PIID", () => {
   assert.deepEqual(validateAwardId(` ${awardId.toLowerCase()} `), { ok: true, value: awardId });
@@ -89,6 +94,45 @@ test("registration readback binds wallet and all immutable fields", () => {
   };
   assert.equal(claimMatchesIntent(claim, intent, claim.registrant.toUpperCase()), true);
   assert.equal(claimMatchesIntent({ ...claim, claim_text: "different" }, intent, claim.registrant), false);
+});
+
+test("pending writes bind the exact Studionet contract and freeze pre-state", () => {
+  const pending = bindPendingWrite(
+    { functionName: "freeze_claim", args: ["FASD-000001"], claimId: "FASD-000001" },
+    deployment,
+    { claim_id: "FASD-000001", status: "REGISTERED", revision_count: 0 },
+  );
+  const restored = JSON.parse(JSON.stringify(pending));
+  assert.equal(pendingMatchesDeployment(restored, deployment), true);
+  assert.equal(pendingMatchesDeployment(restored, { ...deployment, address: "0x2222222222222222222222222222222222222222" }), false);
+  assert.equal(pendingMatchesDeployment({ ...restored, network: "localnet" }, deployment), false);
+  assert.equal(claimMatchesPendingPostcondition({ claim_id: "FASD-000001", status: "FROZEN", revision_count: 0 }, restored), true);
+  assert.equal(claimMatchesPendingPostcondition({ claim_id: "FASD-000001", status: "REGISTERED", revision_count: 0 }, restored), false);
+});
+
+test("assessment reconciliation requires the exact next revision and matching assessment", () => {
+  const pending = bindPendingWrite(
+    { functionName: "assess_current_scope", args: ["FASD-000001"], claimId: "FASD-000001" },
+    deployment,
+    { claim_id: "FASD-000001", status: "FROZEN", revision_count: 2 },
+  );
+  const claim = { claim_id: "FASD-000001", status: "ASSESSED", revision_count: 3, latest_verdict: "CURRENTLY_ALIGNED" };
+  assert.equal(claimMatchesPendingPostcondition({ ...claim, revision_count: 2 }, pending), false);
+  assert.equal(claimMatchesPendingPostcondition(claim, pending), true);
+  assert.equal(assessmentMatchesPendingPostcondition({ claim_id: "FASD-000001", revision: 3, verdict: "CURRENTLY_ALIGNED" }, claim, pending), true);
+  assert.equal(assessmentMatchesPendingPostcondition({ claim_id: "FASD-000001", revision: 2, verdict: "CURRENTLY_ALIGNED" }, claim, pending), false);
+});
+
+test("reassessment binding rejects stale last-action pre-state", () => {
+  assert.throws(
+    () => bindPendingWrite(
+      { functionName: "reassess_after_update", args: ["FASD-000001", "2020-10-25"], claimId: "FASD-000001" },
+      deployment,
+      { claim_id: "FASD-000001", status: "ASSESSED", revision_count: 1 },
+      { award_snapshot: { last_action_date: "2020-10-26" } },
+    ),
+    /last action date/,
+  );
 });
 
 test("execution success requires successful leader return", () => {

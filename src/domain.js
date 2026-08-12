@@ -98,6 +98,86 @@ export function claimMatchesIntent(claim, intent, account) {
   );
 }
 
+function claimRevision(claim) {
+  const revision = Number(claim?.revision_count);
+  return Number.isSafeInteger(revision) && revision >= 0 ? revision : null;
+}
+
+export function bindPendingWrite(intent, deployment, claim = null, assessment = null) {
+  if (!deployment?.ready || !/^0x[a-fA-F0-9]{40}$/.test(deployment.address ?? "")) {
+    throw new Error("The pending write cannot be bound without the exact Studionet contract.");
+  }
+  const pending = { ...intent, network: "studionet", contractAddress: deployment.address };
+  if (intent.functionName === "register_claim") {
+    return { ...pending, preState: null, expected: { kind: "registration" } };
+  }
+
+  const revision = claimRevision(claim);
+  if (!claim || claim.claim_id !== intent.claimId || revision === null) {
+    throw new Error("The pending write has no valid authoritative claim pre-state.");
+  }
+  const preState = { claimId: claim.claim_id, status: claim.status, revision };
+  if (intent.functionName === "freeze_claim") {
+    if (claim.status !== "REGISTERED") throw new Error("Only a REGISTERED claim can be frozen.");
+    return { ...pending, preState, expected: { kind: "freeze", claimId: claim.claim_id, status: "FROZEN", revision } };
+  }
+  if (intent.functionName === "assess_current_scope" || intent.functionName === "reassess_after_update") {
+    const requiredStatus = intent.functionName === "assess_current_scope" ? "FROZEN" : "ASSESSED";
+    if (claim.status !== requiredStatus) throw new Error(`The assessment pre-state must be ${requiredStatus}.`);
+    const lastActionDate = assessment?.award_snapshot?.last_action_date ?? "";
+    if (intent.functionName === "reassess_after_update" && intent.args?.[1] !== lastActionDate) {
+      throw new Error("The reassessment is not bound to the authoritative last action date.");
+    }
+    return {
+      ...pending,
+      preState: { ...preState, lastActionDate },
+      expected: { kind: "assessment", claimId: claim.claim_id, revision: revision + 1 },
+    };
+  }
+  throw new Error("Unsupported pending-write method.");
+}
+
+export function pendingMatchesDeployment(pending, deployment) {
+  return Boolean(
+    pending?.network === "studionet"
+    && deployment?.ready
+    && String(pending.contractAddress ?? "").toLowerCase() === String(deployment.address ?? "").toLowerCase()
+  );
+}
+
+export function claimMatchesPendingPostcondition(claim, pending) {
+  const revision = claimRevision(claim);
+  const pre = pending?.preState;
+  const expected = pending?.expected;
+  if (!claim || revision === null || claim.claim_id !== expected?.claimId || pre?.claimId !== expected.claimId) return false;
+  if (expected.kind === "freeze") {
+    return pending.functionName === "freeze_claim"
+      && pre.status === "REGISTERED"
+      && expected.status === "FROZEN"
+      && expected.revision === pre.revision
+      && claim.status === expected.status
+      && revision === expected.revision;
+  }
+  if (expected.kind === "assessment") {
+    const validPreState = pending.functionName === "assess_current_scope"
+      ? pre.status === "FROZEN"
+      : pending.functionName === "reassess_after_update" && pre.status === "ASSESSED";
+    return validPreState
+      && expected.revision === pre.revision + 1
+      && revision === expected.revision
+      && ["FROZEN", "ASSESSED"].includes(claim.status)
+      && Boolean(claim.latest_verdict);
+  }
+  return false;
+}
+
+export function assessmentMatchesPendingPostcondition(assessment, claim, pending) {
+  return pending?.expected?.kind === "assessment"
+    && assessment?.claim_id === pending.expected.claimId
+    && Number(assessment?.revision) === pending.expected.revision
+    && assessment?.verdict === claim?.latest_verdict;
+}
+
 export function parseContractJson(value, label = "contract response") {
   const parsed = typeof value === "string" ? JSON.parse(value) : value;
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`The ${label} was not an object.`);

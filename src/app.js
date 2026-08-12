@@ -2,9 +2,12 @@ import "./styles.css";
 
 import {
   VERDICT_COPY,
+  assessmentMatchesPendingPostcondition,
+  bindPendingWrite,
+  claimMatchesPendingPostcondition,
   claimMatchesIntent,
   formatCents,
-  parseContractJson,
+  pendingMatchesDeployment,
   shortenAddress,
   validateAwardId,
   validateClaimId,
@@ -174,14 +177,45 @@ function renderProviders() {
   }
 }
 
-async function executeIntent(intent, label, readback) {
+async function readbackPending(pending, returnValue) {
+  const deployment = deploymentState();
+  if (!pendingMatchesDeployment(pending, deployment)) {
+    throw new Error("The pending transaction belongs to a different network or contract.");
+  }
+  if (pending.functionName === "register_claim") {
+    const claimId = validateClaimId(returnValue);
+    if (!claimId.ok) throw new Error("The finalized leader return did not contain a valid claim ID.");
+    const claim = await readClaim(claimId.value);
+    if (!claimMatchesIntent(claim, pending.intent, pending.account)) {
+      throw new Error("The returned claim ID did not match the exact submitted fields and wallet.");
+    }
+    renderClaim(claim);
+    return claim;
+  }
+  const claim = await readClaim(pending.expected?.claimId);
+  if (!claimMatchesPendingPostcondition(claim, pending)) {
+    throw new Error("Authoritative claim state did not match the pending write postcondition.");
+  }
+  let assessment = null;
+  if (pending.expected.kind === "assessment") {
+    assessment = await readAssessment(pending.expected.claimId, pending.expected.revision);
+    if (!assessmentMatchesPendingPostcondition(assessment, claim, pending)) {
+      throw new Error("Authoritative assessment did not match the expected appended revision.");
+    }
+  }
+  renderClaim(claim, assessment);
+  return claim;
+}
+
+async function executeIntent(intent, label) {
   if (!state.writeClient) throw new Error("Choose and connect a wallet before sending a write.");
-  localStorage.setItem(PENDING_KEY, JSON.stringify({ ...intent, phase: "prepared", createdAt: new Date().toISOString() }));
+  const pending = bindPendingWrite(intent, deploymentState(), state.claim, state.assessment);
+  localStorage.setItem(PENDING_KEY, JSON.stringify({ ...pending, phase: "prepared", createdAt: new Date().toISOString() }));
   const hash = await submitWrite(state.writeClient, intent.functionName, intent.args);
-  localStorage.setItem(PENDING_KEY, JSON.stringify({ ...intent, phase: "submitted", hash, createdAt: new Date().toISOString() }));
+  localStorage.setItem(PENDING_KEY, JSON.stringify({ ...pending, phase: "submitted", hash, createdAt: new Date().toISOString() }));
   announce(`${label} submitted. Waiting for FINALIZED and successful leader execution…`, "info", 0);
   const finalized = await waitForSuccessfulFinalization(hash);
-  const result = await readback(finalized.returnValue);
+  const result = await readbackPending(pending, finalized.returnValue);
   localStorage.removeItem(PENDING_KEY);
   announce(`${label} finalized and matched authoritative readback.`);
   return result;
@@ -203,18 +237,11 @@ async function reconcilePending() {
   }
   try {
     announce("Reconciling the pending transaction before any retry…", "warning", 0);
-    const finalized = await waitForSuccessfulFinalization(pending.hash);
-    if (pending.functionName === "register_claim") {
-      const claimId = validateClaimId(finalized.returnValue);
-      if (!claimId.ok) throw new Error("The finalized leader return did not contain a valid claim ID.");
-      const claim = await readClaim(claimId.value);
-      if (!claimMatchesIntent(claim, pending.intent, pending.account)) {
-        throw new Error("The returned claim ID did not match the exact submitted fields and wallet.");
-      }
-      renderClaim(claim);
-    } else if (pending.claimId) {
-      await loadClaim(pending.claimId);
+    if (!pendingMatchesDeployment(pending, deploymentState())) {
+      throw new Error("The saved write belongs to a different network or contract.");
     }
+    const finalized = await waitForSuccessfulFinalization(pending.hash);
+    await readbackPending(pending, finalized.returnValue);
     localStorage.removeItem(PENDING_KEY);
     announce("The pending transaction finalized and its state was read back.");
   } catch (error) {
@@ -312,17 +339,7 @@ elements.claimForm.addEventListener("submit", async (event) => {
         account: state.account,
       },
       "Claim registration",
-      async (returnedId) => {
-        const claimId = validateClaimId(returnedId);
-        if (!claimId.ok) throw new Error("The finalized leader return did not contain a valid claim ID.");
-        const registered = await readClaim(claimId.value);
-        if (!claimMatchesIntent(registered, result.value, state.account)) {
-          throw new Error("The returned claim ID did not match the exact submitted fields and wallet.");
-        }
-        return registered;
-      },
     );
-    renderClaim(claim);
     setButton(button, "success", "Claim registered");
   } catch (error) {
     setButton(button, "error", "Register again");
@@ -336,9 +353,7 @@ elements.freeze.addEventListener("click", async () => {
     const claim = await executeIntent(
       { functionName: "freeze_claim", args: [state.claimId], claimId: state.claimId },
       `Freeze ${state.claimId}`,
-      () => readClaim(state.claimId),
     );
-    renderClaim(claim);
     setButton(elements.freeze, "success", "Claim frozen");
     elements.freeze.disabled = true;
   } catch (error) {
@@ -349,7 +364,6 @@ elements.freeze.addEventListener("click", async () => {
 
 elements.assess.addEventListener("click", async () => {
   const reassessing = state.claim?.status === "ASSESSED";
-  const previousRevision = Number(state.claim?.revision_count ?? 0);
   const lastActionDate = state.assessment?.award_snapshot?.last_action_date ?? "";
   setButton(elements.assess, "loading", reassessing ? "Reassessing…" : "Assessing…");
   try {
@@ -360,15 +374,7 @@ elements.assess.addEventListener("click", async () => {
         claimId: state.claimId,
       },
       `${reassessing ? "Reassessment" : "Assessment"} ${state.claimId}`,
-      async () => {
-        const claim = await readClaim(state.claimId);
-        if (Number(claim.revision_count) !== previousRevision + 1) {
-          throw new Error("The expected assessment revision was not appended.");
-        }
-        return claim;
-      },
     );
-    await loadClaim(state.claimId);
     elements.assess.dataset.state = "success";
   } catch (error) {
     setButton(elements.assess, "error", reassessing ? "Reassess again" : "Assess again");

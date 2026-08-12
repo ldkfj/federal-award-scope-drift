@@ -50,8 +50,10 @@ def _transaction_iso() -> str:
 
 
 def _decode_response(response: typing.Any) -> typing.Any:
-    if response.status != 200:
-        raise ValueError(f"HTTP_{response.status}")
+    # Current Web Access exposes status_code; status keeps Direct Mode compatible with its older pinned runner.
+    status_code = getattr(response, "status_code", getattr(response, "status", 0))
+    if status_code != 200:
+        raise ValueError(f"HTTP_{status_code}")
     body = response.body
     if isinstance(body, bytes):
         body = body.decode("utf-8")
@@ -147,37 +149,42 @@ def _produce_assessment(claim: dict[str, typing.Any]) -> dict[str, typing.Any]:
             return _unresolved(claim, "NO_PRIME_TRANSACTIONS")
         if transaction_count > MAX_TRANSACTIONS:
             return _unresolved(claim, "TRANSACTION_LIMIT_EXCEEDED")
+        if detail.get("generated_unique_award_id") != claim["award_id"]:
+            return _unresolved(claim, "AWARD_ID_MISMATCH")
         if detail.get("type") != "D":
             return _unresolved(claim, "MVP_REQUIRES_DEFINITIVE_CONTRACT")
+        detail_piid = str(detail.get("piid") or "").upper()
+        if not detail_piid or not claim["award_id"].startswith(f"CONT_AWD_{detail_piid}_"):
+            return _unresolved(claim, "PIID_MISMATCH")
 
         transaction_request = {
-            "filters": {"award_ids": [detail.get("piid", "")], "award_type_codes": ["D"]},
-            "fields": [
-                "Award ID",
-                "Recipient Name",
-                "Recipient UEI",
-                "Action Date",
-                "Action Type",
-                "Mod",
-                "Transaction Description",
-                "Transaction Amount",
-                "Award Type",
-            ],
+            "award_id": claim["award_id"],
             "page": 1,
             "limit": MAX_TRANSACTIONS,
-            "sort": "Action Date",
+            "sort": "action_date",
             "order": "desc",
-            "subawards": False,
         }
-        transactions = _decode_response(
+        transaction_payload = _decode_response(
             gl.nondet.web.request(
-                f"{USA_BASE}/search/spending_by_transaction/",
+                f"{USA_BASE}/transactions/",
                 method="POST",
-                body=transaction_request,
+                body=_canonical_json(transaction_request),
+                headers={"content-type": "application/json"},
             )
-        ).get("results", [])
+        )
+        transactions = transaction_payload.get("results", [])
+        page_metadata = transaction_payload.get("page_metadata") or {}
+        if page_metadata.get("page") != 1 or page_metadata.get("hasNext") is not False or page_metadata.get("next") is not None:
+            return _unresolved(claim, "INCOMPLETE_TRANSACTION_PAGINATION")
         if len(transactions) != transaction_count:
             return _unresolved(claim, "INCOMPLETE_TRANSACTION_HISTORY")
+        if any(
+            not isinstance(item.get("id"), str)
+            or not item.get("id")
+            or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(item.get("action_date") or ""))
+            for item in transactions
+        ):
+            return _unresolved(claim, "MALFORMED_TRANSACTION_HISTORY")
 
         source_text = gl.nondet.web.render(claim["claim_url"], mode="text")
         claim_source_verified = _normalize_claim_text(claim["claim_text"]) in _normalized_visible_text(source_text)
@@ -186,7 +193,7 @@ def _produce_assessment(claim: dict[str, typing.Any]) -> dict[str, typing.Any]:
         recipient_uei = (recipient.get("recipient_uei") or "").upper()
         identity_match = recipient_uei == claim["recipient_id"]
         current_amount_cents = int(round(float(detail.get("total_obligation") or 0) * 100))
-        action_dates = [str(item.get("Action Date") or "") for item in transactions]
+        action_dates = [str(item.get("action_date") or "") for item in transactions]
         last_action_date = max(action_dates) if action_dates else ""
         period = detail.get("period_of_performance") or {}
         award_snapshot = {
@@ -206,10 +213,10 @@ def _produce_assessment(claim: dict[str, typing.Any]) -> dict[str, typing.Any]:
 
         evidence_transactions = [
             {
-                "action_date": item.get("Action Date", ""),
-                "mod": item.get("Mod", ""),
-                "description": str(item.get("Transaction Description") or "")[:800],
-                "amount_cents": str(int(round(float(item.get("Transaction Amount") or 0) * 100))),
+                "action_date": item.get("action_date", ""),
+                "mod": item.get("modification_number", ""),
+                "description": str(item.get("description") or "")[:800],
+                "amount_cents": str(int(round(float(item.get("federal_action_obligation") or 0) * 100))),
             }
             for item in transactions
         ]

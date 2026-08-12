@@ -20,7 +20,7 @@ Literal lookup is insufficient: a claim may remain online while later modificati
 1. A user looks up a definitive contract by PIID, selects the canonical USAspending Award ID, and enters the exact claim text, recipient UEI, public HTTPS source, and observation date.
 2. The connected wallet registers the claim and receives the exact returned claim ID only after transaction finality, successful execution, and authoritative readback.
 3. The registrant freezes the claim. Its identity and wording can no longer change.
-4. Any user can request an assessment. Validators compare the frozen statement with current award detail and up to 100 prime-award transactions.
+4. Any user can request an assessment. Validators compare the frozen statement with current award detail and the complete, award-specific history of up to 100 prime-award transactions.
 5. Later reassessments append revisions after a contract-enforced 24-hour cooldown; history is never overwritten.
 
 ## Architecture
@@ -40,7 +40,7 @@ This is a non-economic project: no GEN, escrow, payout, bond, stake, or payment 
 
 ## Transaction lifecycle
 
-The browser requires explicit provider and account selection before signing. Pending write intent is stored across reloads and reconciled before retry. A write is displayed as successful only when its transaction is `FINALIZED`, a leader execution completed successfully, and contract readback matches the intended claim or exact next revision. Pending, disagreement, execution failure, decode failure, and readback mismatch remain visible recoverable errors.
+The browser requires explicit provider and account selection before signing. Each pending write stores its Studionet contract binding, authoritative pre-state, and method-specific expected postcondition across reloads. A retry remains blocked until the original transaction is reconciled. A write is displayed as successful only when its transaction is `FINALIZED`, a leader execution completed successfully, and contract readback matches the intended registration, freeze transition, or exact appended assessment revision. Pending, disagreement, execution failure, decode failure, and readback mismatch remain visible recoverable errors.
 
 ## Run locally
 
@@ -70,7 +70,7 @@ python -m pytest tests/test_contract.py -q
 genvm-lint check contracts/FederalAwardScopeDrift.py
 ```
 
-Current local result: 10/10 frontend tests, 17/17 Direct Mode contract tests, production build pass, semantic lint/validation pass, `pip check` pass, and npm audit with zero known vulnerabilities.
+Current local result: 13/13 frontend tests, 28/28 Direct Mode contract tests, production build pass, semantic lint/validation pass, `pip check` pass, and npm audit with zero known vulnerabilities.
 
 Direct Mode in `genlayer-test` currently has a Windows temporary-file cleanup incompatibility. On Windows, use WSL or an isolated wrapper that only tolerates `WinError 32` for its own temporary directory. The pytest assertions and exit status must still pass; a cleanup workaround alone is not evidence.
 

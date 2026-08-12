@@ -1,4 +1,5 @@
 import json
+import sys
 
 import pytest
 
@@ -26,33 +27,39 @@ def mock_assessment(
     source_text=CLAIM_TEXT,
     transaction_count=1,
     count_status=200,
+    generated_award_id=AWARD_ID,
+    piid="47PF0021C0003",
+    award_type="D",
+    has_next=False,
+    transaction_results=None,
 ):
     detail = {
-        "generated_unique_award_id": AWARD_ID,
-        "piid": "47PF0021C0003",
-        "type": "D",
+        "generated_unique_award_id": generated_award_id,
+        "piid": piid,
+        "type": award_type,
         "description": "Ashley U.S. Courthouse construction",
         "total_obligation": 85535000,
         "recipient": {"recipient_name": "General Services Administration", "recipient_uei": recipient_uei},
         "awarding_agency": {"toptier_agency": {"name": "General Services Administration"}},
         "period_of_performance": {"start_date": "2020-10-26", "end_date": "2025-10-25"},
     }
+    default_results = [{
+        "id": "CONT_TX_001",
+        "type": "A",
+        "action_date": "2020-10-26",
+        "action_type": "A",
+        "action_type_description": "NEW",
+        "modification_number": "0",
+        "description": "Ashley U.S. Courthouse construction",
+        "federal_action_obligation": 85535000,
+    }]
     transactions = {
-        "results": [{
-            "Award ID": "47PF0021C0003",
-            "Recipient Name": "General Services Administration",
-            "Recipient UEI": RECIPIENT_UEI,
-            "Action Date": "2020-10-26",
-            "Action Type": "A",
-            "Mod": "0",
-            "Transaction Description": "Ashley U.S. Courthouse construction",
-            "Transaction Amount": 85535000,
-            "Award Type": "D",
-        }],
+        "page_metadata": {"page": 1, "next": 2 if has_next else None, "previous": None, "hasNext": has_next, "hasPrevious": False},
+        "results": default_results if transaction_results is None else transaction_results,
     }
     direct_vm.mock_web(r"/awards/count/transaction/", {"method": "GET", "status": count_status, "body": json.dumps({"transactions": transaction_count})})
     direct_vm.mock_web(r"/awards/CONT_AWD_", {"method": "GET", "status": 200, "body": json.dumps(detail)})
-    direct_vm.mock_web(r"/search/spending_by_transaction/", {"method": "POST", "status": 200, "body": json.dumps(transactions)})
+    direct_vm.mock_web(r"/transactions/", {"method": "POST", "status": 200, "body": json.dumps(transactions)})
     direct_vm.mock_web(r"gsa\.gov/", {"method": "GET", "status": 200, "body": source_text})
     direct_vm.mock_llm(
         r"classifying a frozen public statement",
@@ -85,6 +92,21 @@ def test_registers_claim_with_canonical_binding(direct_vm, direct_deploy, direct
     assert claim["recipient_id"] == RECIPIENT_UEI
     assert claim["status"] == "REGISTERED"
     assert claim["registrant"].lower() == f"0x{direct_alice.hex()}"
+
+
+@pytest.mark.parametrize("status_code", [404, 429, 503])
+def test_decoder_uses_runtime_status_code_shape(direct_deploy, status_code):
+    contract = direct_deploy(CONTRACT)
+    module = sys.modules[type(object.__getattribute__(contract, "_instance")).__module__]
+
+    class RuntimeResponse:
+        def __init__(self, code, body=b"{}"):
+            self.status_code = code
+            self.body = body
+
+    assert module._decode_response(RuntimeResponse(200)) == {}
+    with pytest.raises(ValueError, match=f"HTTP_{status_code}"):
+        module._decode_response(RuntimeResponse(status_code))
 
 
 def test_only_registrant_can_freeze(direct_vm, direct_deploy, direct_alice, direct_bob):
@@ -247,13 +269,41 @@ def test_consequential_verdict_matrix(direct_vm, direct_deploy, mock_kwargs, exp
     assert assessment["verdict"] == expected_verdict
 
 
-def test_http_failure_is_unresolved_and_retryable(direct_vm, direct_deploy):
+@pytest.mark.parametrize("status_code", [404, 429, 503])
+def test_http_failure_is_unresolved_and_retryable(direct_vm, direct_deploy, status_code):
     contract = direct_deploy(CONTRACT)
     claim_id = register_and_freeze(contract)
-    mock_assessment(direct_vm, count_status=503)
+    mock_assessment(direct_vm, count_status=status_code)
 
     assessment = json.loads(contract.assess_current_scope(claim_id))
     claim = json.loads(contract.get_claim(claim_id))
     assert assessment["verdict"] == "UNRESOLVED"
-    assert assessment["reason_codes"] == ["HTTP_503"]
+    assert assessment["reason_codes"] == [f"HTTP_{status_code}"]
     assert claim["status"] == "FROZEN"
+
+
+@pytest.mark.parametrize(
+    ("mock_kwargs", "reason"),
+    [
+        ({"generated_award_id": "CONT_AWD_FOREIGN_0000_-NONE-_-NONE-"}, "AWARD_ID_MISMATCH"),
+        ({"piid": "FOREIGNPIID"}, "PIID_MISMATCH"),
+        ({"award_type": "A"}, "MVP_REQUIRES_DEFINITIVE_CONTRACT"),
+        ({"has_next": True}, "INCOMPLETE_TRANSACTION_PAGINATION"),
+        ({"transaction_results": []}, "INCOMPLETE_TRANSACTION_HISTORY"),
+        ({"transaction_results": [{"id": "", "action_date": "not-a-date"}]}, "MALFORMED_TRANSACTION_HISTORY"),
+    ],
+)
+def test_transaction_history_fails_closed_when_exact_award_provenance_is_not_complete(
+    direct_vm,
+    direct_deploy,
+    mock_kwargs,
+    reason,
+):
+    contract = direct_deploy(CONTRACT)
+    claim_id = register_and_freeze(contract)
+    mock_assessment(direct_vm, **mock_kwargs)
+
+    assessment = json.loads(contract.assess_current_scope(claim_id))
+    assert assessment["verdict"] == "UNRESOLVED"
+    assert assessment["reason_codes"] == [reason]
+    assert json.loads(contract.get_claim(claim_id))["status"] == "FROZEN"
