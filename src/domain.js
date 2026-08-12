@@ -145,6 +145,29 @@ export function pendingMatchesDeployment(pending, deployment) {
   );
 }
 
+export async function beginPendingWrite(storage, key, pending, submit) {
+  if (storage.getItem(key)) throw new Error("A previous write must be reconciled before another submission.");
+  const createdAt = new Date().toISOString();
+  storage.setItem(key, JSON.stringify({ ...pending, phase: "prepared", createdAt }));
+  const hash = await submit();
+  storage.setItem(key, JSON.stringify({ ...pending, phase: "submitted", hash, createdAt }));
+  return hash;
+}
+
+export async function reconcileStoredPending(storage, key, deployment, wait, readback) {
+  const raw = storage.getItem(key);
+  if (!raw) return null;
+  const pending = JSON.parse(raw);
+  if (!pending.hash) throw new Error("The pending write has no transaction hash; verify contract state before recovery.");
+  if (!pendingMatchesDeployment(pending, deployment)) {
+    throw new Error("The saved write belongs to a different network or contract.");
+  }
+  const finalized = await wait(pending.hash);
+  await readback(pending, finalized.returnValue);
+  storage.removeItem(key);
+  return pending;
+}
+
 export function claimMatchesPendingPostcondition(claim, pending) {
   const revision = claimRevision(claim);
   const pre = pending?.preState;

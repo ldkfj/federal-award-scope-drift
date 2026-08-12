@@ -3,11 +3,13 @@ import "./styles.css";
 import {
   VERDICT_COPY,
   assessmentMatchesPendingPostcondition,
+  beginPendingWrite,
   bindPendingWrite,
   claimMatchesPendingPostcondition,
   claimMatchesIntent,
   formatCents,
   pendingMatchesDeployment,
+  reconcileStoredPending,
   shortenAddress,
   validateAwardId,
   validateClaimId,
@@ -34,6 +36,7 @@ const state = {
   claimId: "",
   claim: null,
   assessment: null,
+  pendingLocked: false,
 };
 
 const elements = {
@@ -77,8 +80,18 @@ function announce(message, tone = "info", timeout = 7000) {
 
 function setButton(button, status, label) {
   button.dataset.state = status;
-  button.disabled = status === "loading";
+  const writeButton = button === elements.claimForm.querySelector('button[type="submit"]')
+    || button === elements.freeze
+    || button === elements.assess;
+  button.disabled = status === "loading" || (writeButton && state.pendingLocked);
   button.textContent = label;
+}
+
+function setWriteLock(locked) {
+  state.pendingLocked = locked;
+  elements.claimForm.querySelector('button[type="submit"]').disabled = locked || !state.writeClient;
+  elements.freeze.disabled = locked || !state.writeClient || state.claim?.status !== "REGISTERED";
+  elements.assess.disabled = locked || !state.writeClient || !["FROZEN", "ASSESSED"].includes(state.claim?.status);
 }
 
 function setFieldError(name, message) {
@@ -141,8 +154,8 @@ function renderClaim(claim, assessment = null) {
   state.claim = claim;
   state.assessment = assessment;
   elements.claimId.value = claim.claim_id;
-  elements.freeze.disabled = !state.writeClient || claim.status !== "REGISTERED";
-  elements.assess.disabled = !state.writeClient || !["FROZEN", "ASSESSED"].includes(claim.status);
+  elements.freeze.disabled = state.pendingLocked || !state.writeClient || claim.status !== "REGISTERED";
+  elements.assess.disabled = state.pendingLocked || !state.writeClient || !["FROZEN", "ASSESSED"].includes(claim.status);
   elements.assess.textContent = claim.status === "ASSESSED" ? "Reassess after update" : "Assess current scope";
 }
 
@@ -210,39 +223,35 @@ async function readbackPending(pending, returnValue) {
 async function executeIntent(intent, label) {
   if (!state.writeClient) throw new Error("Choose and connect a wallet before sending a write.");
   const pending = bindPendingWrite(intent, deploymentState(), state.claim, state.assessment);
-  localStorage.setItem(PENDING_KEY, JSON.stringify({ ...pending, phase: "prepared", createdAt: new Date().toISOString() }));
-  const hash = await submitWrite(state.writeClient, intent.functionName, intent.args);
-  localStorage.setItem(PENDING_KEY, JSON.stringify({ ...pending, phase: "submitted", hash, createdAt: new Date().toISOString() }));
+  setWriteLock(true);
+  const hash = await beginPendingWrite(
+    localStorage,
+    PENDING_KEY,
+    pending,
+    () => submitWrite(state.writeClient, intent.functionName, intent.args),
+  );
   announce(`${label} submitted. Waiting for FINALIZED and successful leader execution…`, "info", 0);
   const finalized = await waitForSuccessfulFinalization(hash);
   const result = await readbackPending(pending, finalized.returnValue);
   localStorage.removeItem(PENDING_KEY);
+  setWriteLock(false);
   announce(`${label} finalized and matched authoritative readback.`);
   return result;
 }
 
 async function reconcilePending() {
-  const raw = localStorage.getItem(PENDING_KEY);
-  if (!raw) return;
-  let pending;
-  try {
-    pending = JSON.parse(raw);
-  } catch {
-    localStorage.removeItem(PENDING_KEY);
-    return;
-  }
-  if (!pending.hash) {
-    announce("A write was prepared but no transaction hash was recorded. Review the current contract state before retrying.", "warning", 0);
-    return;
-  }
+  if (!localStorage.getItem(PENDING_KEY)) return;
+  setWriteLock(true);
   try {
     announce("Reconciling the pending transaction before any retry…", "warning", 0);
-    if (!pendingMatchesDeployment(pending, deploymentState())) {
-      throw new Error("The saved write belongs to a different network or contract.");
-    }
-    const finalized = await waitForSuccessfulFinalization(pending.hash);
-    await readbackPending(pending, finalized.returnValue);
-    localStorage.removeItem(PENDING_KEY);
+    await reconcileStoredPending(
+      localStorage,
+      PENDING_KEY,
+      deploymentState(),
+      waitForSuccessfulFinalization,
+      readbackPending,
+    );
+    setWriteLock(false);
     announce("The pending transaction finalized and its state was read back.");
   } catch (error) {
     announce(`Pending transaction is not safely reconciled. ${error.message} Do not retry yet.`, "error", 0);
@@ -264,6 +273,7 @@ elements.confirmWallet.addEventListener("click", async () => {
   try {
     state.account = await requestWalletAccount(selected.provider);
     state.writeClient = await makeWriteClient(selected.provider, state.account);
+    setWriteLock(state.pendingLocked);
     elements.connect.textContent = shortenAddress(state.account);
     elements.walletDialog.close();
     setButton(elements.confirmWallet, "success", "Connected");
@@ -407,4 +417,5 @@ for (const input of elements.claimForm.querySelectorAll("input, textarea")) {
 
 const deployment = deploymentState();
 if (!deployment.ready) announce(`${deployment.message} Read-only award preview remains available; contract writes are disabled.`, "warning", 0);
+setWriteLock(Boolean(localStorage.getItem(PENDING_KEY)));
 void reconcilePending();

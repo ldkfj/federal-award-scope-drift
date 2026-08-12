@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   assessmentMatchesPendingPostcondition,
+  beginPendingWrite,
   bindPendingWrite,
   claimMatchesPendingPostcondition,
   claimMatchesIntent,
@@ -11,6 +12,7 @@ import {
   pendingMatchesDeployment,
   receiptFinalized,
   receiptSucceeded,
+  reconcileStoredPending,
   validateAwardId,
   validateClaimInput,
 } from "../../src/domain.js";
@@ -133,6 +135,47 @@ test("reassessment binding rejects stale last-action pre-state", () => {
     ),
     /last action date/,
   );
+});
+
+test("pending orchestration blocks every replacement until exact reconciliation", async () => {
+  const key = "pending";
+  const values = new Map();
+  const storage = {
+    getItem: (name) => values.get(name) ?? null,
+    setItem: (name, value) => values.set(name, value),
+    removeItem: (name) => values.delete(name),
+  };
+  const pending = bindPendingWrite(
+    { functionName: "freeze_claim", args: ["FASD-000001"], claimId: "FASD-000001" },
+    deployment,
+    { claim_id: "FASD-000001", status: "REGISTERED", revision_count: 0 },
+  );
+  let submits = 0;
+  const submit = async () => { submits += 1; return "0xabc"; };
+
+  for (const saved of [
+    { ...pending, phase: "prepared" },
+    { ...pending, phase: "submitted", hash: "0xold" },
+    { ...pending, phase: "submitted", hash: "0xold", contractAddress: "0x2222222222222222222222222222222222222222" },
+  ]) {
+    storage.setItem(key, JSON.stringify(saved));
+    await assert.rejects(beginPendingWrite(storage, key, pending, submit), /must be reconciled/);
+  }
+  assert.equal(submits, 0);
+
+  storage.setItem(key, JSON.stringify({ ...pending, phase: "submitted", hash: "0xold" }));
+  await assert.rejects(
+    reconcileStoredPending(storage, key, deployment, async () => ({ returnValue: null }), async () => { throw new Error("readback mismatch"); }),
+    /readback mismatch/,
+  );
+  assert.notEqual(storage.getItem(key), null);
+  await assert.rejects(beginPendingWrite(storage, key, pending, submit), /must be reconciled/);
+  assert.equal(submits, 0);
+
+  await reconcileStoredPending(storage, key, deployment, async () => ({ returnValue: null }), async () => {});
+  assert.equal(storage.getItem(key), null);
+  assert.equal(await beginPendingWrite(storage, key, pending, submit), "0xabc");
+  assert.equal(submits, 1);
 });
 
 test("execution success requires successful leader return", () => {
