@@ -119,8 +119,25 @@ export function shortenAddress(value) {
   return /^0x[a-fA-F0-9]{40}$/.test(address) ? `${address.slice(0, 6)}…${address.slice(-4)}` : address;
 }
 
+function normalizeExecutionName(value) {
+  const name = String(value ?? "").toUpperCase();
+  return name === "1" ? "FINISHED_WITH_RETURN" : name;
+}
+
 export function readExecutionName(receipt) {
-  return String(receipt?.txExecutionResultName ?? receipt?.consensus_data?.leader_receipt?.result_name ?? "").toUpperCase();
+  const source = receipt?.consensus_data?.leader_receipt;
+  const leaders = Array.isArray(source) ? source : source ? [source] : [];
+  const names = [
+    receipt?.txExecutionResultName,
+    receipt?.txExecutionResult,
+    ...leaders.flatMap((leader) => [leader.execution_result, leader.result_name]),
+  ].map(normalizeExecutionName).filter(Boolean);
+  return names.find((name) => name === "FINISHED_WITH_RETURN") ?? names[0] ?? "";
+}
+
+export function receiptFinalized(receipt) {
+  const status = String(receipt?.statusName ?? receipt?.status_name ?? receipt?.status ?? "").toUpperCase();
+  return receipt?.consensus_data?.final === true && (status === "FINALIZED" || status === "7");
 }
 
 export function receiptSucceeded(receipt) {

@@ -1,7 +1,7 @@
 import { createClient } from "genlayer-js";
 import { studionet } from "genlayer-js/chains";
 import { TransactionStatus } from "genlayer-js/types";
-import { parseContractJson, receiptSucceeded } from "./domain.js";
+import { parseContractJson, receiptFinalized, receiptSucceeded } from "./domain.js";
 import { decodeSuccessfulLeaderReturn } from "./receipt.js";
 
 const runtimeEnv = import.meta.env ?? {};
@@ -53,6 +53,9 @@ export async function waitForSuccessfulFinalization(hash) {
     status: TransactionStatus.FINALIZED,
     fullTransaction: true,
   });
+  if (!receiptFinalized(receipt)) {
+    throw new Error("The transaction is not explicitly FINALIZED.");
+  }
   if (!receiptSucceeded(receipt)) {
     throw new Error("The transaction finalized, but leader execution did not finish successfully.");
   }

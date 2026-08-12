@@ -5,6 +5,7 @@ import {
   claimMatchesIntent,
   formatCents,
   parseContractJson,
+  receiptFinalized,
   receiptSucceeded,
   validateAwardId,
   validateClaimInput,
@@ -92,8 +93,17 @@ test("registration readback binds wallet and all immutable fields", () => {
 
 test("execution success requires successful leader return", () => {
   assert.equal(receiptSucceeded({ txExecutionResultName: "FINISHED_WITH_RETURN" }), true);
+  assert.equal(receiptSucceeded({ consensus_data: { leader_receipt: [{ execution_result: "1" }] } }), true);
+  assert.equal(receiptSucceeded({ consensus_data: { leader_receipt: [{ execution_result: "FINISHED_WITH_RETURN" }] } }), true);
   assert.equal(receiptSucceeded({ txExecutionResultName: "FINISHED_WITH_ERROR" }), false);
   assert.equal(receiptSucceeded({}), false);
+});
+
+test("finality requires explicit final status and consensus final flag", () => {
+  assert.equal(receiptFinalized({ status_name: "FINALIZED", consensus_data: { final: true } }), true);
+  assert.equal(receiptFinalized({ status: 7, consensus_data: { final: true } }), true);
+  assert.equal(receiptFinalized({ statusName: "FINALIZED", consensus_data: { final: false } }), false);
+  assert.equal(receiptFinalized({ consensus_data: { final: true } }), false);
 });
 
 test("contract JSON and cents format safely", () => {
