@@ -1,0 +1,15 @@
+node_modules/
+dist/
+artifacts/
+.env
+.env.local
+.env.*.local
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+coverage/
+test-results/
+playwright-report/
+.vercel/
+*.log

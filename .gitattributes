@@ -1,0 +1,2 @@
+* text=auto
+contracts/*.py text eol=lf
