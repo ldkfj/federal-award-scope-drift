@@ -1,0 +1,65 @@
+:root {
+  --color-paper: oklch(97% 0.008 250);
+  --color-paper-2: oklch(94% 0.012 250);
+  --color-paper-3: oklch(90% 0.014 250);
+  --color-ink: oklch(19% 0.025 250);
+  --color-ink-2: oklch(31% 0.025 250);
+  --color-neutral: oklch(43% 0.022 250);
+  --color-muted: oklch(38% 0.02 250);
+  --color-rule: oklch(72% 0.02 250);
+  --color-rule-strong: oklch(55% 0.035 250);
+  --color-accent: oklch(42% 0.14 250);
+  --color-accent-ink: oklch(98% 0.006 250);
+  --color-focus: oklch(58% 0.18 75);
+  --color-error: oklch(47% 0.17 25);
+  --color-error-paper: oklch(94% 0.025 25);
+  --color-success: oklch(40% 0.1 150);
+  --color-success-paper: oklch(94% 0.025 150);
+  --color-warning: oklch(45% 0.12 70);
+  --color-warning-paper: oklch(94% 0.03 70);
+
+  --font-display: "Newsreader", "Times New Roman", serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", sans-serif;
+  --font-outlier: "IBM Plex Mono", "Cascadia Mono", monospace;
+
+  --space-3xs: 0.125rem;
+  --space-2xs: 0.25rem;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2.5rem;
+  --space-2xl: 4rem;
+  --space-3xl: 6rem;
+  --space-4xl: 9rem;
+
+  --text-xs: 0.72rem;
+  --text-sm: 0.84rem;
+  --text-base: 1rem;
+  --text-md: 1.25rem;
+  --text-lg: 1.5625rem;
+  --text-xl: 1.9531rem;
+  --text-2xl: 2.4414rem;
+  --text-3xl: 3.0518rem;
+  --text-display: clamp(2.75rem, 5vw + 1rem, 5.25rem);
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-micro: 100ms;
+  --dur-short: 180ms;
+  --dur-long: 360ms;
+
+  --rule-hairline: 1px solid var(--color-rule);
+  --rule-strong: 1px solid var(--color-rule-strong);
+  --radius-sm: 0.2rem;
+  --radius-md: 0.35rem;
+
+  --z-base: 1;
+  --z-raised: 10;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-modal: 400;
+  --z-toast: 500;
+  --z-tooltip: 600;
+}

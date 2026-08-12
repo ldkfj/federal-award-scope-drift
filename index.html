@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="Register and assess a frozen public claim against current USAspending award records through GenLayer validator consensus." />
+    <meta name="theme-color" content="#f2f4f8" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;700&family=Newsreader:opsz,wght@6..72,300;6..72,700&display=swap" rel="stylesheet" />
+    <title>Federal Award Scope Drift</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to the assessment workbench</a>
+
+    <header class="site-header" aria-label="Primary">
+      <a class="wordmark" href="#main">Federal Award Scope Drift</a>
+      <button class="button button--quiet" id="connect-wallet" type="button">Choose wallet</button>
+    </header>
+
+    <main id="main">
+      <section class="intro reveal" aria-labelledby="page-title">
+        <div>
+          <p class="network-line"><span aria-hidden="true">●</span> Studionet · public monitoring signal</p>
+          <h1 id="page-title">Check a federal award claim</h1>
+        </div>
+        <p class="intro__lede">Freeze the exact public wording. Bind it to one definitive contract. GenLayer validators independently read the current award and modification chain before recording a verdict.</p>
+      </section>
+
+      <section class="workbench" aria-labelledby="workflow-title">
+        <div class="workbench__main">
+          <h2 id="workflow-title">Assessment workbench</h2>
+          <ol class="workflow" id="workflow">
+            <li class="workflow__step" data-step="1">
+              <div class="step-marker" aria-hidden="true">1.0</div>
+              <div class="step-content">
+                <h3>Locate the exact award</h3>
+                <form id="award-lookup-form" novalidate>
+                  <div class="field">
+                    <label for="award-id">USAspending generated Award ID</label>
+                    <div class="field__control">
+                      <input id="award-id" name="awardId" type="text" autocomplete="off" spellcheck="false" placeholder="CONT_AWD_…" aria-describedby="award-id-help" required />
+                      <span class="field__state" aria-hidden="true"></span>
+                    </div>
+                    <p class="field__help" id="award-id-help">Use the generated identifier from the USAspending award URL, not a subaward ID.</p>
+                  </div>
+                  <button class="button" type="submit">Read award</button>
+                </form>
+                <div id="award-preview" class="award-preview" hidden></div>
+              </div>
+            </li>
+
+            <li class="workflow__step" data-step="2">
+              <div class="step-marker" aria-hidden="true">2.0</div>
+              <div class="step-content">
+                <h3>Freeze the public wording</h3>
+                <form id="claim-form" novalidate>
+                  <div class="field-grid">
+                    <div class="field">
+                      <label for="recipient-id">Recipient UEI</label>
+                      <div class="field__control">
+                        <input id="recipient-id" name="recipientId" type="text" autocomplete="off" spellcheck="false" placeholder="12-character UEI" maxlength="12" aria-describedby="recipient-id-help" required readonly />
+                        <span class="field__state" aria-hidden="true"></span>
+                      </div>
+                      <p class="field__help" id="recipient-id-help">Filled from the selected authoritative award row.</p>
+                    </div>
+                    <div class="field">
+                      <label for="observed-at">Claim observation date</label>
+                      <div class="field__control">
+                        <input id="observed-at" name="observedAt" type="date" autocomplete="off" aria-describedby="observed-at-help" required />
+                        <span class="field__state" aria-hidden="true"></span>
+                      </div>
+                      <p class="field__help" id="observed-at-help">The date on which the exact wording was observed.</p>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label for="claim-url">Public claim URL</label>
+                    <div class="field__control">
+                      <input id="claim-url" name="claimUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://agency.gov/award-announcement…" aria-describedby="claim-url-help" required />
+                      <span class="field__state" aria-hidden="true"></span>
+                    </div>
+                    <p class="field__help" id="claim-url-help">Must be a public HTTPS page containing the exact claim text.</p>
+                  </div>
+                  <div class="field">
+                    <label for="claim-text">Exact public claim</label>
+                    <div class="field__control field__control--textarea">
+                      <textarea id="claim-text" name="claimText" rows="5" minlength="20" maxlength="2000" placeholder="Paste the exact sentence or paragraph…" aria-describedby="claim-text-help" required></textarea>
+                      <span class="field__state" aria-hidden="true"></span>
+                    </div>
+                    <p class="field__help" id="claim-text-help">20–2,000 characters. This wording cannot change after registration.</p>
+                  </div>
+                  <button class="button" type="submit">Register claim</button>
+                </form>
+              </div>
+            </li>
+
+            <li class="workflow__step" data-step="3">
+              <div class="step-marker" aria-hidden="true">3.0</div>
+              <div class="step-content">
+                <h3>Freeze, then assess</h3>
+                <p>Registration establishes the binding. Freezing makes it assessment-ready. Assessment may take several minutes while validators refetch both sources.</p>
+                <div class="action-row">
+                  <button class="button button--quiet" id="freeze-claim" type="button" disabled>Freeze claim</button>
+                  <button class="button" id="assess-claim" type="button" disabled>Assess current scope</button>
+                </div>
+              </div>
+            </li>
+          </ol>
+        </div>
+
+        <aside class="record-panel" aria-labelledby="record-title">
+          <div class="record-panel__head">
+            <h2 id="record-title">Authoritative record</h2>
+            <form id="record-form" class="record-search" novalidate>
+              <label for="claim-id">Claim ID</label>
+              <div class="record-search__row">
+                <input id="claim-id" name="claimId" type="text" autocomplete="off" spellcheck="false" placeholder="FASD-000001" />
+                <button class="button button--quiet" type="submit">Read</button>
+              </div>
+            </form>
+          </div>
+          <div id="record-output" class="record-output" aria-live="polite">
+            <p class="empty-title">No claim selected.</p>
+            <p>Register a claim or enter its exact ID to read contract state.</p>
+          </div>
+        </aside>
+      </section>
+
+      <section class="boundary-note" aria-labelledby="boundary-title">
+        <h2 id="boundary-title">What the verdict does not say</h2>
+        <p>It does not prove fraud, measure contractor performance, certify delivered work, or establish a right to payment. “Obligation” is not “expenditure.” An unresolved source never receives an aligned signal.</p>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>Federal Award Scope Drift</span>
+      <span>USAspending evidence · GenLayer Studionet</span>
+      <a href="https://www.usaspending.gov/data/about-the-data-download.pdf" target="_blank" rel="noreferrer">Read data notes</a>
+    </footer>
+
+    <dialog id="wallet-dialog" aria-labelledby="wallet-title">
+      <form method="dialog" class="dialog__surface">
+        <div class="dialog__head">
+          <h2 id="wallet-title">Choose a wallet provider</h2>
+          <button class="icon-button" value="cancel" aria-label="Close wallet chooser">×</button>
+        </div>
+        <p>Select the browser wallet that will sign Studionet writes. No provider is chosen automatically.</p>
+        <div id="wallet-options" class="wallet-options"></div>
+        <button class="button" id="confirm-wallet" value="default" type="button" disabled>Connect selected wallet</button>
+      </form>
+    </dialog>
+
+    <div id="status-region" class="status-region" aria-live="polite" aria-atomic="true"></div>
+    <script type="module" src="/src/app.js"></script>
+  </body>
+</html>
