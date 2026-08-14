@@ -168,6 +168,26 @@ export async function reconcileStoredPending(storage, key, deployment, wait, rea
   return pending;
 }
 
+export function recoverPreparedRegistration(storage, key, deployment, claim) {
+  const raw = storage.getItem(key);
+  if (!raw) return false;
+  let pending;
+  try {
+    pending = JSON.parse(raw);
+  } catch {
+    return false;
+  }
+  if (
+    pending.phase !== "prepared"
+    || pending.hash
+    || pending.functionName !== "register_claim"
+    || !pendingMatchesDeployment(pending, deployment)
+    || !claimMatchesIntent(claim, pending.intent, pending.account)
+  ) return false;
+  storage.removeItem(key);
+  return true;
+}
+
 export function claimMatchesPendingPostcondition(claim, pending) {
   const revision = claimRevision(claim);
   const pre = pending?.preState;

@@ -12,6 +12,7 @@ import {
   pendingMatchesDeployment,
   receiptFinalized,
   receiptSucceeded,
+  recoverPreparedRegistration,
   reconcileStoredPending,
   validateAwardId,
   validateClaimInput,
@@ -176,6 +177,53 @@ test("pending orchestration blocks every replacement until exact reconciliation"
   assert.equal(storage.getItem(key), null);
   assert.equal(await beginPendingWrite(storage, key, pending, submit), "0xabc");
   assert.equal(submits, 1);
+});
+
+test("exact registration readback safely recovers a prepared write without replay", () => {
+  const key = "pending";
+  const values = new Map();
+  const storage = {
+    getItem: (name) => values.get(name) ?? null,
+    setItem: (name, value) => values.set(name, value),
+    removeItem: (name) => values.delete(name),
+  };
+  const intent = {
+    awardId,
+    recipientId: "VEP4UN7LDMK5",
+    claimText: "GSA awarded $85,535,000 for the courthouse project.",
+    claimUrl: "https://www.gsa.gov/example",
+    observedAt: "2020-10-26",
+  };
+  const account = "0x3333333333333333333333333333333333333333";
+  const pending = {
+    ...bindPendingWrite({ functionName: "register_claim", args: Object.values(intent), intent, account }, deployment),
+    phase: "prepared",
+  };
+  const claim = {
+    claim_id: "FASD-000003",
+    registrant: account,
+    award_id: intent.awardId,
+    recipient_id: intent.recipientId,
+    claim_text: intent.claimText,
+    claim_url: intent.claimUrl,
+    observed_at: intent.observedAt,
+  };
+
+  storage.setItem(key, JSON.stringify(pending));
+  assert.equal(recoverPreparedRegistration(storage, key, deployment, { ...claim, claim_text: "different" }), false);
+  assert.notEqual(storage.getItem(key), null);
+  assert.equal(recoverPreparedRegistration(storage, key, deployment, claim), true);
+  assert.equal(storage.getItem(key), null);
+
+  for (const unsafe of [
+    { ...pending, phase: "submitted", hash: "0xabc" },
+    { ...pending, functionName: "freeze_claim" },
+    { ...pending, contractAddress: "0x2222222222222222222222222222222222222222" },
+  ]) {
+    storage.setItem(key, JSON.stringify(unsafe));
+    assert.equal(recoverPreparedRegistration(storage, key, deployment, claim), false);
+    assert.notEqual(storage.getItem(key), null);
+  }
 });
 
 test("execution success requires successful leader return", () => {

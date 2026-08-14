@@ -9,6 +9,7 @@ import {
   claimMatchesIntent,
   formatCents,
   pendingMatchesDeployment,
+  recoverPreparedRegistration,
   reconcileStoredPending,
   shortenAddress,
   validateAwardId,
@@ -488,7 +489,11 @@ elements.recordForm.addEventListener("submit", async (event) => {
   if (!result.ok) return announce(`${result.message} Correct the ID and read again.`, "error");
   elements.record.setAttribute("aria-busy", "true");
   try {
-    await loadClaim(result.value);
+    const claim = await loadClaim(result.value);
+    if (recoverPreparedRegistration(localStorage, PENDING_KEY, deploymentState(), claim)) {
+      setWriteLock(false);
+      announce("Recovered the finalized registration from exact authoritative readback. No write was replayed.");
+    }
   } catch (error) {
     announce(`Claim read failed. ${error.message} Verify the exact ID and Studionet deployment.`, "error", 0);
   } finally {
