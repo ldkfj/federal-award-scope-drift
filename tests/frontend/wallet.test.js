@@ -21,11 +21,13 @@ test("an in-flight request keeps the provider that actually received it selected
   assert.equal(selectWalletProvider("metamask", "okx", ""), "okx");
 });
 
-function announcement(uuid, provider, name = "Test wallet") {
+function announcement(uuid, provider, name = "Test wallet", rdns = "test.wallet") {
   const event = new Event("eip6963:announceProvider");
-  Object.defineProperty(event, "detail", { value: { info: { uuid, name, icon: "data:image/svg+xml,test" }, provider } });
+  Object.defineProperty(event, "detail", { value: { info: { uuid, name, rdns, icon: "data:image/svg+xml,test" }, provider } });
   return event;
 }
+
+const wait = (ms = 5) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function fakeProvider(handler = async ({ method }) => {
   if (method === "eth_requestAccounts") return [ACCOUNT_A];
@@ -91,15 +93,43 @@ test("discovery exposes two announcements and deduplicates repeated UUID and ide
   discovery.cleanup();
 });
 
-test("legacy provider is only a fallback and is replaced by the first announcement", () => {
+test("legacy provider is delayed, neutral, and replaced by a late EIP-6963 announcement", async () => {
   const target = new FakeTarget();
   const legacy = fakeProvider();
   const announced = fakeProvider();
+  legacy.isMetaMask = true;
   target.ethereum = legacy;
-  const discovery = createWalletDiscovery(target);
-  assert.equal(discovery.refresh()[0].provider, legacy);
+  const discovery = createWalletDiscovery(target, () => {}, 0);
+  assert.deepEqual(discovery.refresh(), []);
+  await wait();
+  assert.equal(discovery.getProviders()[0].provider, legacy);
+  assert.equal(discovery.getProviders()[0].name, "Injected wallet");
   target.dispatchEvent(announcement("announced", announced));
   assert.deepEqual(discovery.getProviders().map((item) => item.provider), [announced]);
+  discovery.cleanup();
+});
+
+test("selecting each announced wallet routes every connection RPC to that exact object", async () => {
+  const wallets = ["OKX Wallet", "MetaMask", "Phantom"].map((name) => ({ name, provider: fakeProvider() }));
+  const target = new FakeTarget();
+  target.addEventListener("eip6963:requestProvider", () => {
+    wallets.forEach(({ name, provider }, index) => target.dispatchEvent(announcement(`wallet-${index}`, provider, name)));
+  });
+  const discovery = createWalletDiscovery(target);
+  const options = discovery.refresh();
+
+  for (const option of options) {
+    wallets.forEach(({ provider }) => { provider.calls.length = 0; });
+    await connectInjectedWallet(option.provider);
+    for (const { provider } of wallets) {
+      assert.deepEqual(
+        provider.calls.map((call) => call.method),
+        provider === option.provider
+          ? ["eth_requestAccounts", "wallet_switchEthereumChain", "eth_chainId"]
+          : [],
+      );
+    }
+  }
   discovery.cleanup();
 });
 

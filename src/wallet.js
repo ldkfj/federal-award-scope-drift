@@ -22,44 +22,50 @@ function validUuid(value) {
   return typeof value === "string" && value.trim().length > 0 && value.trim().length <= 128;
 }
 
-function fallbackName(provider) {
-  if (provider?.isMetaMask) return "MetaMask";
-  if (provider?.isCoinbaseWallet) return "Coinbase Wallet";
-  if (provider?.isBraveWallet) return "Brave Wallet";
-  return "Injected wallet";
-}
-
-export function createWalletDiscovery(target = window, onChange = () => {}) {
+export function createWalletDiscovery(target = window, onChange = () => {}, fallbackDelayMs = 150) {
   const options = new Map();
   const uuidToId = new Map();
-  const providerToId = new WeakMap();
   const fallbackId = "legacy-injected-provider";
   let nextId = 1;
   let cleanedUp = false;
+  let fallbackTimer;
 
   const notify = () => onChange([...options.values()]);
+  const findProviderId = (provider) => [...options].find(([, option]) => option.provider === provider)?.[0];
+  const clearFallbackTimer = () => {
+    if (fallbackTimer === undefined) return;
+    clearTimeout(fallbackTimer);
+    fallbackTimer = undefined;
+  };
+  const rebuildUuidIndex = () => {
+    uuidToId.clear();
+    for (const [id, option] of options) if (option.uuid) uuidToId.set(option.uuid, id);
+  };
 
   const announce = (event) => {
     if (cleanedUp) return;
     const { info, provider } = event?.detail ?? {};
     if (!validUuid(info?.uuid) || !validProvider(provider)) return;
 
+    clearFallbackTimer();
     options.delete(fallbackId);
     const uuid = info.uuid.trim();
-    const existingId = uuidToId.get(uuid) ?? providerToId.get(provider);
-    const id = existingId ?? `announced-provider-${nextId++}`;
+    const uuidId = uuidToId.get(uuid);
+    const providerId = findProviderId(provider);
+    const id = uuidId ?? providerId ?? `announced-provider-${nextId++}`;
+    if (uuidId && providerId && uuidId !== providerId) options.delete(providerId);
     const previous = options.get(id);
     const option = {
       id,
       uuid,
       name: safeLabel(info.name, "Browser wallet"),
+      rdns: safeLabel(info.rdns, ""),
       icon: typeof info.icon === "string" && info.icon.length <= 100_000 ? info.icon : "",
       provider,
     };
     options.set(id, option);
-    uuidToId.set(uuid, id);
-    providerToId.set(provider, id);
     if (previous?.uuid && previous.uuid !== uuid) uuidToId.delete(previous.uuid);
+    rebuildUuidIndex();
     notify();
   };
 
@@ -67,17 +73,22 @@ export function createWalletDiscovery(target = window, onChange = () => {}) {
 
   function refresh() {
     if (cleanedUp) return [];
+    clearFallbackTimer();
     target.dispatchEvent(new Event("eip6963:requestProvider"));
-    if (options.size === 0 && validProvider(target.ethereum)) {
-      options.set(fallbackId, {
-        id: fallbackId,
-        uuid: "",
-        name: fallbackName(target.ethereum),
-        icon: "",
-        provider: target.ethereum,
-      });
-      providerToId.set(target.ethereum, fallbackId);
-      notify();
+    if (options.size === 0) {
+      fallbackTimer = setTimeout(() => {
+        fallbackTimer = undefined;
+        if (cleanedUp || options.size > 0 || !validProvider(target.ethereum)) return;
+        options.set(fallbackId, {
+          id: fallbackId,
+          uuid: "",
+          name: "Injected wallet",
+          rdns: "",
+          icon: "",
+          provider: target.ethereum,
+        });
+        notify();
+      }, fallbackDelayMs);
     }
     return [...options.values()];
   }
@@ -88,6 +99,7 @@ export function createWalletDiscovery(target = window, onChange = () => {}) {
     cleanup() {
       if (cleanedUp) return;
       cleanedUp = true;
+      clearFallbackTimer();
       target.removeEventListener("eip6963:announceProvider", announce);
       options.clear();
     },

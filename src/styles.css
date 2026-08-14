@@ -556,7 +556,14 @@ dialog::backdrop {
 .wallet-option {
   width: 100%;
   padding: var(--space-sm) var(--space-md);
+  display: grid;
+  gap: 0.2rem;
   text-align: start;
+}
+
+.wallet-option small {
+  font-weight: 500;
+  opacity: 0.72;
 }
 
 .wallet-option[aria-pressed="true"] {

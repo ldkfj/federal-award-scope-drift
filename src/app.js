@@ -191,7 +191,14 @@ function renderProviders() {
     const button = document.createElement("button");
     button.className = "wallet-option";
     button.type = "button";
-    button.textContent = item.name;
+    const name = document.createElement("span");
+    name.textContent = item.name;
+    button.append(name);
+    if (item.rdns) {
+      const rdns = document.createElement("small");
+      rdns.textContent = item.rdns;
+      button.append(rdns);
+    }
     button.dataset.providerId = item.id;
     button.disabled = Boolean(state.connectingProviderId);
     button.setAttribute("aria-pressed", String(item.id === state.selectedProviderId));
