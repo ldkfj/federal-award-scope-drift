@@ -22,28 +22,18 @@ function validUuid(value) {
   return typeof value === "string" && value.trim().length > 0 && value.trim().length <= 128;
 }
 
+function validAnnouncementInfo(info) {
+  return validUuid(info?.uuid)
+    && typeof info.name === "string" && info.name.trim().length > 0 && info.name.trim().length <= 100
+    && typeof info.rdns === "string" && info.rdns.trim().length > 0 && info.rdns.trim().length <= 100
+    && typeof info.icon === "string" && info.icon.length <= 100_000;
+}
+
 const KNOWN_PROVIDER_NAMES = new Map([
   ["com.okex.wallet", "OKX Wallet"],
   ["io.metamask", "MetaMask"],
   ["app.phantom", "Phantom"],
 ]);
-
-function providerIdentityMarkers(provider) {
-  try {
-    return [
-      provider.isOkxWallet || provider.isOKExWallet ? "com.okex.wallet" : "",
-      provider.isMetaMask ? "io.metamask" : "",
-      provider.isPhantom ? "app.phantom" : "",
-    ].filter(Boolean);
-  } catch {
-    return ["unreadable-provider-identity"];
-  }
-}
-
-function validAnnouncedIdentity(rdns, markers) {
-  if (markers.includes("unreadable-provider-identity") || new Set(markers).size > 1) return false;
-  return markers.length === 0 || !KNOWN_PROVIDER_NAMES.has(rdns) || markers[0] === rdns;
-}
 
 export function createDisconnectedWalletSession() {
   return { account: "", selectedProvider: null, writeClient: null };
@@ -72,10 +62,8 @@ export function createWalletDiscovery(target = window, onChange = () => {}, fall
   const announce = (event) => {
     if (cleanedUp) return;
     const { info, provider } = event?.detail ?? {};
-    if (!validUuid(info?.uuid) || !validProvider(provider)) return;
+    if (!validAnnouncementInfo(info) || !validProvider(provider)) return;
     const rdns = safeLabel(info.rdns, "").toLowerCase();
-    const identityMarkers = providerIdentityMarkers(provider);
-    if (!validAnnouncedIdentity(rdns, identityMarkers)) return;
 
     clearFallbackTimer();
     options.delete(fallbackId);
@@ -94,7 +82,6 @@ export function createWalletDiscovery(target = window, onChange = () => {}, fall
       rdns,
       icon: typeof info.icon === "string" && info.icon.length <= 100_000 ? info.icon : "",
       provider,
-      identityMarkers,
       callLedger: previous?.callLedger ?? [],
     };
     options.set(id, option);
@@ -120,7 +107,6 @@ export function createWalletDiscovery(target = window, onChange = () => {}, fall
           rdns: "",
           icon: "",
           provider: target.ethereum,
-          identityMarkers: [],
           callLedger: [],
         });
         notify();

@@ -141,7 +141,6 @@ test("legacy provider is delayed, neutral, and replaced by a late EIP-6963 annou
   await wait();
   assert.equal(discovery.getProviders()[0].provider, legacy);
   assert.equal(discovery.getProviders()[0].name, "Injected wallet");
-  assert.deepEqual(discovery.getProviders()[0].identityMarkers, []);
   assert.deepEqual(discovery.getProviders()[0].callLedger, []);
   target.dispatchEvent(announcement("announced", announced));
   assert.deepEqual(discovery.getProviders().map((item) => item.provider), [announced]);
@@ -181,22 +180,24 @@ test("selecting each announced wallet routes every connection RPC to that exact 
   discovery.cleanup();
 });
 
-test("forged named metadata and aggregate routers never create callable named options", () => {
-  const cases = [
-    { rdns: "com.okex.wallet", flags: { isMetaMask: true } },
-    { rdns: "com.okex.wallet", flags: { isPhantom: true } },
-    { rdns: "io.metamask", flags: { isOkxWallet: true } },
-    { rdns: "app.phantom", flags: { isMetaMask: true, isPhantom: true } },
-  ];
-  for (const [index, entry] of cases.entries()) {
-    const target = new FakeTarget();
-    const provider = Object.assign(fakeProvider(), entry.flags);
-    const discovery = createWalletDiscovery(target);
-    target.dispatchEvent(announcement(`forged-${index}`, provider, "Forged wallet", entry.rdns));
-    assert.deepEqual(discovery.getProviders(), []);
-    assert.deepEqual(provider.calls, []);
-    discovery.cleanup();
-  }
+test("valid OKX with a MetaMask compatibility flag remains exact-object callable", async () => {
+  const target = new FakeTarget();
+  const okx = fakeProvider();
+  const metamask = fakeProvider();
+  const globalRouter = fakeProvider();
+  okx.isMetaMask = true;
+  target.ethereum = globalRouter;
+  const discovery = createWalletDiscovery(target);
+  target.dispatchEvent(announcement("okx", okx, "OKX Wallet", "com.okex.wallet"));
+  target.dispatchEvent(announcement("metamask", metamask, "MetaMask", "io.metamask"));
+  const selected = discovery.getProviders().find((option) => option.rdns === "com.okex.wallet");
+  assert.equal(selected.name, "OKX Wallet");
+  await connectInjectedWallet(selected.provider, STUDIONET_WALLET_CHAIN, selected.callLedger);
+  assert.deepEqual(selected.callLedger, ["eth_requestAccounts", "wallet_switchEthereumChain", "eth_chainId"]);
+  assert.deepEqual(okx.calls.map((call) => call.method), selected.callLedger);
+  assert.deepEqual(metamask.calls, []);
+  assert.deepEqual(globalRouter.calls, []);
+  discovery.cleanup();
 });
 
 test("unknown announcement metadata is display-only and remains neutral", () => {
@@ -212,6 +213,8 @@ test("invalid announcements are ignored", () => {
   const discovery = createWalletDiscovery(target);
   target.dispatchEvent(announcement("", fakeProvider()));
   target.dispatchEvent(announcement("bad", {}));
+  target.dispatchEvent(announcement("long-name", fakeProvider(), "x".repeat(101)));
+  target.dispatchEvent(announcement("long-rdns", fakeProvider(), "Test", "x".repeat(101)));
   assert.deepEqual(discovery.getProviders(), []);
   discovery.cleanup();
 });
