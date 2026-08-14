@@ -142,6 +142,15 @@ test("invalid announcements are ignored", () => {
   discovery.cleanup();
 });
 
+test("unsupported Phantom announcements are omitted from the chooser", () => {
+  const target = new FakeTarget();
+  const discovery = createWalletDiscovery(target);
+  target.dispatchEvent(announcement("phantom", fakeProvider(), "Phantom", "app.phantom"));
+  target.dispatchEvent(announcement("metamask", fakeProvider(), "MetaMask", "io.metamask"));
+  assert.deepEqual(discovery.getProviders().map((item) => item.rdns), ["io.metamask"]);
+  discovery.cleanup();
+});
+
 test("explicit connection rejects an empty account before chain RPC", async () => {
   const provider = fakeProvider(async ({ method }) => method === "eth_requestAccounts" ? [] : null);
   await assert.rejects(connectInjectedWallet(provider), /valid account/);

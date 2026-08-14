@@ -22,6 +22,8 @@ function validUuid(value) {
   return typeof value === "string" && value.trim().length > 0 && value.trim().length <= 128;
 }
 
+const UNSUPPORTED_PROVIDER_RDNS = new Set(["app.phantom"]);
+
 export function createWalletDiscovery(target = window, onChange = () => {}, fallbackDelayMs = 150) {
   const options = new Map();
   const uuidToId = new Map();
@@ -46,6 +48,7 @@ export function createWalletDiscovery(target = window, onChange = () => {}, fall
     if (cleanedUp) return;
     const { info, provider } = event?.detail ?? {};
     if (!validUuid(info?.uuid) || !validProvider(provider)) return;
+    if (UNSUPPORTED_PROVIDER_RDNS.has(String(info?.rdns ?? "").trim().toLowerCase())) return;
 
     clearFallbackTimer();
     options.delete(fallbackId);
