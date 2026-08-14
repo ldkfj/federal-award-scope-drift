@@ -429,13 +429,15 @@ test("write client is constructed with the exact selected provider and account",
   const globalProvider = fakeProvider();
   globalThis.ethereum = globalProvider;
   let captured;
+  let snapConnectCalls = 0;
   const client = await makeWriteClient(selected, ACCOUNT_A, (options) => {
     captured = options;
-    return { connect: async () => {} };
+    return { connect: async () => { snapConnectCalls += 1; } };
   });
   assert.ok(client);
   assert.equal(captured.provider, selected);
   assert.equal(captured.account, ACCOUNT_A);
   assert.notEqual(captured.provider, globalThis.ethereum);
+  assert.equal(snapConnectCalls, 0);
   delete globalThis.ethereum;
 });

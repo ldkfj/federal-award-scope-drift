@@ -97,4 +97,5 @@ Deployment, the complete live matrix, and an isolated exact-source upgrade rehea
 - USAspending obligations are not expenditures, and verdicts are monitoring signals—not findings of fraud, performance ratings, proof of delivery, or legal/payment decisions.
 - Public web content and USAspending data can change during consensus, producing `UNRESOLVED` until a later reassessment.
 - Wallet support is limited to EIP-6963-announced MetaMask and OKX Wallet with a matching dedicated `window.okxwallet` provider. An OKX-labelled aggregate announcement is hidden when that native namespace is unavailable, preventing another extension from receiving the request. Unknown providers, legacy aggregate injection, WalletConnect, mobile, hardware-wallet, and smart-account flows are not supported or displayed.
+- Wallet connection and writes use standard EIP-1193 account, chain, and transaction methods on the selected provider; the frontend does not invoke the optional MetaMask Snap connection path.
 - Studionet is temporary; a network reset destroys the address and state. The public repository and final Vercel URL remain gated release artifacts until published.
