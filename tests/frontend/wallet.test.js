@@ -101,7 +101,23 @@ test("discovery exposes two announcements and deduplicates repeated UUID and ide
   const discovery = createWalletDiscovery(target);
   const providers = discovery.refresh();
   assert.equal(providers.length, 2);
-  assert.equal(providers.find((item) => item.provider === first).name, "Browser wallet");
+  assert.equal(providers.find((item) => item.provider === first).name, "Updated name");
+  discovery.cleanup();
+});
+
+test("conflicting UUID or provider identity cannot remap an existing option", () => {
+  const target = new FakeTarget();
+  const first = fakeProvider();
+  const replacement = fakeProvider();
+  const discovery = createWalletDiscovery(target);
+  target.dispatchEvent(announcement("stable", first, "First", "first.wallet"));
+  target.dispatchEvent(announcement("stable", replacement, "Replacement", "replacement.wallet"));
+  target.dispatchEvent(announcement("other-uuid", first, "Alias", "alias.wallet"));
+  assert.equal(discovery.getProviders().length, 1);
+  assert.equal(discovery.getProviders()[0].provider, first);
+  assert.equal(discovery.getProviders()[0].rdns, "first.wallet");
+  assert.deepEqual(first.calls, []);
+  assert.deepEqual(replacement.calls, []);
   discovery.cleanup();
 });
 
@@ -151,34 +167,6 @@ test("invalid announcements are ignored", () => {
   target.dispatchEvent(announcement("", fakeProvider()));
   target.dispatchEvent(announcement("bad", {}));
   assert.deepEqual(discovery.getProviders(), []);
-  discovery.cleanup();
-});
-
-test("unsupported Phantom announcements are omitted from the chooser", () => {
-  const target = new FakeTarget();
-  const discovery = createWalletDiscovery(target);
-  target.dispatchEvent(announcement("phantom", fakeProvider(), "Phantom", "app.phantom"));
-  target.dispatchEvent(announcement("metamask", fakeProvider(), "MetaMask", "io.metamask"));
-  assert.deepEqual(discovery.getProviders().map((item) => item.rdns), ["io.metamask"]);
-  discovery.cleanup();
-});
-
-test("forged OKX metadata on a MetaMask provider fails closed", () => {
-  const target = new FakeTarget();
-  const discovery = createWalletDiscovery(target);
-  const metamaskRouter = fakeProvider();
-  metamaskRouter.isMetaMask = true;
-  target.dispatchEvent(announcement("forged-okx", metamaskRouter, "OKX Wallet", "com.okex.wallet"));
-  assert.deepEqual(discovery.getProviders(), []);
-  assert.deepEqual(metamaskRouter.calls, []);
-  discovery.cleanup();
-});
-
-test("unknown announcement metadata stays neutral and never creates a named wallet", () => {
-  const target = new FakeTarget();
-  const discovery = createWalletDiscovery(target);
-  target.dispatchEvent(announcement("unknown", fakeProvider(), "OKX Wallet", "evil.example"));
-  assert.equal(discovery.getProviders()[0].name, "Browser wallet");
   discovery.cleanup();
 });
 

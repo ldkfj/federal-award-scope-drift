@@ -22,22 +22,6 @@ function validUuid(value) {
   return typeof value === "string" && value.trim().length > 0 && value.trim().length <= 128;
 }
 
-const UNSUPPORTED_PROVIDER_RDNS = new Set(["app.phantom"]);
-const PROVIDER_DISPLAY_NAMES = new Map([
-  ["com.okex.wallet", "OKX Wallet"],
-  ["io.metamask", "MetaMask"],
-]);
-
-function conflictsWithAnnouncedIdentity(rdns, provider) {
-  try {
-    if (rdns === "com.okex.wallet") return Boolean(provider.isMetaMask || provider.isPhantom);
-    if (rdns === "io.metamask") return Boolean(provider.isOkxWallet || provider.isPhantom);
-  } catch {
-    return true;
-  }
-  return false;
-}
-
 export function createWalletDiscovery(target = window, onChange = () => {}, fallbackDelayMs = 150) {
   const options = new Map();
   const uuidToId = new Map();
@@ -62,22 +46,21 @@ export function createWalletDiscovery(target = window, onChange = () => {}, fall
     if (cleanedUp) return;
     const { info, provider } = event?.detail ?? {};
     if (!validUuid(info?.uuid) || !validProvider(provider)) return;
-    const rdns = safeLabel(info?.rdns, "").toLowerCase();
-    if (UNSUPPORTED_PROVIDER_RDNS.has(rdns) || conflictsWithAnnouncedIdentity(rdns, provider)) return;
 
     clearFallbackTimer();
     options.delete(fallbackId);
     const uuid = info.uuid.trim();
     const uuidId = uuidToId.get(uuid);
     const providerId = findProviderId(provider);
+    if (uuidId && options.get(uuidId)?.provider !== provider) return;
+    if (providerId && options.get(providerId)?.uuid !== uuid) return;
     const id = uuidId ?? providerId ?? `announced-provider-${nextId++}`;
-    if (uuidId && providerId && uuidId !== providerId) options.delete(providerId);
     const previous = options.get(id);
     const option = {
       id,
       uuid,
-      name: PROVIDER_DISPLAY_NAMES.get(rdns) ?? "Browser wallet",
-      rdns,
+      name: safeLabel(info.name, "Browser wallet"),
+      rdns: safeLabel(info.rdns, ""),
       icon: typeof info.icon === "string" && info.icon.length <= 100_000 ? info.icon : "",
       provider,
     };
