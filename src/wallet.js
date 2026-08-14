@@ -104,6 +104,10 @@ export function normalizeChainId(value) {
   }
 }
 
+export function selectWalletProvider(currentId, requestedId, connectingProviderId = "") {
+  return connectingProviderId ? currentId : requestedId;
+}
+
 function errorCode(error) {
   return error?.code ?? error?.data?.originalError?.code ?? error?.cause?.code;
 }

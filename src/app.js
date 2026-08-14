@@ -30,6 +30,7 @@ import {
   connectInjectedWallet,
   createDialogBoundary,
   createWalletDiscovery,
+  selectWalletProvider,
   showChooserError,
 } from "./wallet.js";
 
@@ -38,6 +39,7 @@ const state = {
   award: null,
   providers: [],
   selectedProviderId: "",
+  connectingProviderId: "",
   account: "",
   selectedProvider: null,
   writeClient: null,
@@ -191,9 +193,15 @@ function renderProviders() {
     button.type = "button";
     button.textContent = item.name;
     button.dataset.providerId = item.id;
+    button.disabled = Boolean(state.connectingProviderId);
     button.setAttribute("aria-pressed", String(item.id === state.selectedProviderId));
     button.addEventListener("click", () => {
-      state.selectedProviderId = item.id;
+      state.selectedProviderId = selectWalletProvider(
+        state.selectedProviderId,
+        item.id,
+        state.connectingProviderId,
+      );
+      if (state.connectingProviderId) return;
       elements.confirmWallet.disabled = false;
       elements.walletError.hidden = true;
       renderProviders();
@@ -323,8 +331,11 @@ elements.connect.addEventListener("click", () => {
 elements.walletClose.addEventListener("click", () => dialogBoundary.close());
 
 elements.confirmWallet.addEventListener("click", async () => {
+  if (state.connectingProviderId) return;
   const selected = state.providers.find((item) => item.id === state.selectedProviderId);
   if (!selected) return;
+  state.connectingProviderId = selected.id;
+  renderProviders();
   setButton(elements.confirmWallet, "loading", "Connecting…");
   try {
     state.account = await connectInjectedWallet(selected.provider);
@@ -343,6 +354,9 @@ elements.confirmWallet.addEventListener("click", async () => {
     setWriteLock(state.pendingLocked);
     setButton(elements.confirmWallet, "error", "Try connection again");
     showChooserError(elements.walletError, error);
+  } finally {
+    state.connectingProviderId = "";
+    renderProviders();
   }
 });
 

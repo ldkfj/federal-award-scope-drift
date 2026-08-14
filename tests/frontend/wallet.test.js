@@ -7,6 +7,7 @@ import {
   connectInjectedWallet,
   createDialogBoundary,
   createWalletDiscovery,
+  selectWalletProvider,
   showChooserError,
 } from "../../src/wallet.js";
 
@@ -14,6 +15,11 @@ const ACCOUNT_A = "0x1111111111111111111111111111111111111111";
 const ACCOUNT_B = "0x2222222222222222222222222222222222222222";
 
 class FakeTarget extends EventTarget {}
+
+test("an in-flight request keeps the provider that actually received it selected", () => {
+  assert.equal(selectWalletProvider("metamask", "okx", "metamask"), "metamask");
+  assert.equal(selectWalletProvider("metamask", "okx", ""), "okx");
+});
 
 function announcement(uuid, provider, name = "Test wallet") {
   const event = new Event("eip6963:announceProvider");
