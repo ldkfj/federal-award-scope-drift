@@ -37,7 +37,7 @@ const KNOWN_PROVIDER_NAMES = new Map([
 function resolveAnnouncedProvider(target, rdns, announcedProvider) {
   if (rdns !== "com.okex.wallet") return announcedProvider;
   const namespaced = target.okxwallet?.ethereum ?? target.okxwallet;
-  return validProvider(namespaced) ? namespaced : announcedProvider;
+  return validProvider(namespaced) ? namespaced : null;
 }
 
 export function createDisconnectedWalletSession() {
@@ -64,6 +64,7 @@ export function createWalletDiscovery(target = window, onChange = () => {}) {
     const rdns = safeLabel(info.rdns, "").toLowerCase();
     if (!KNOWN_PROVIDER_NAMES.has(rdns)) return;
     const provider = resolveAnnouncedProvider(target, rdns, announcedProvider);
+    if (!validProvider(provider)) return;
 
     const uuid = info.uuid.trim();
     const uuidId = uuidToId.get(uuid);

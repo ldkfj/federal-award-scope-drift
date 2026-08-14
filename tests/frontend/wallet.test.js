@@ -99,6 +99,7 @@ test("discovery exposes two announcements and deduplicates repeated UUID and ide
   const target = new FakeTarget();
   const first = fakeProvider();
   const second = fakeProvider();
+  target.okxwallet = second;
   target.addEventListener("eip6963:requestProvider", () => {
     target.dispatchEvent(announcement("first", first, "Old name", "io.metamask"));
     target.dispatchEvent(announcement("second", second, "OKX", "com.okex.wallet"));
@@ -156,6 +157,7 @@ test("selecting each announced wallet routes every connection RPC to that exact 
     return { ...wallet, provider };
   });
   const target = new FakeTarget();
+  target.okxwallet = wallets.find(({ rdns }) => rdns === "com.okex.wallet").provider;
   target.addEventListener("eip6963:requestProvider", () => {
     wallets.forEach(({ name, rdns, provider }, index) => target.dispatchEvent(announcement(`wallet-${index}`, provider, name, rdns)));
   });
@@ -184,6 +186,7 @@ test("valid OKX with a MetaMask compatibility flag remains exact-object callable
   const metamask = fakeProvider();
   const globalRouter = fakeProvider();
   okx.isMetaMask = true;
+  target.okxwallet = okx;
   target.ethereum = globalRouter;
   const discovery = createWalletDiscovery(target);
   target.dispatchEvent(announcement("okx", okx, "OKX Wallet", "com.okex.wallet"));
@@ -195,6 +198,16 @@ test("valid OKX with a MetaMask compatibility flag remains exact-object callable
   assert.deepEqual(okx.calls.map((call) => call.method), selected.callLedger);
   assert.deepEqual(metamask.calls, []);
   assert.deepEqual(globalRouter.calls, []);
+  discovery.cleanup();
+});
+
+test("an OKX-labelled aggregate is hidden without the native OKX namespace", () => {
+  const target = new FakeTarget();
+  const aggregate = fakeProvider();
+  const discovery = createWalletDiscovery(target);
+  target.dispatchEvent(announcement("okx", aggregate, "OKX Wallet", "com.okex.wallet"));
+  assert.deepEqual(discovery.getProviders(), []);
+  assert.deepEqual(aggregate.calls, []);
   discovery.cleanup();
 });
 
