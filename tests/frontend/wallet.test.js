@@ -221,6 +221,10 @@ test("chooser reports errors inline with an active alert target", () => {
   showChooserError(alert, new Error("User rejected connection"));
   assert.equal(alert.textContent, "User rejected connection");
   assert.equal(alert.hidden, false);
+  showChooserError(alert, { data: { originalError: { message: "Wallet request rejected" } } });
+  assert.equal(alert.textContent, "Wallet request rejected");
+  showChooserError(alert, { code: 4001, message: {} });
+  assert.equal(alert.textContent, "Wallet connection failed. Retry or choose another announced provider.");
 });
 
 class Focusable {

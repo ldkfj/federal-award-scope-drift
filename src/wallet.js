@@ -162,7 +162,16 @@ export function bindProviderSession(provider, handlers = {}) {
 }
 
 export function showChooserError(element, error) {
-  element.textContent = error instanceof Error ? error.message : String(error || "Wallet connection failed.");
+  const candidates = [
+    error?.message,
+    error?.error?.message,
+    error?.data?.message,
+    error?.data?.originalError?.message,
+    error?.cause?.message,
+  ];
+  const message = candidates.find((value) => typeof value === "string" && value.trim())
+    ?? (typeof error === "string" && error.trim() ? error : "Wallet connection failed. Retry or choose another announced provider.");
+  element.textContent = message;
   element.hidden = false;
 }
 
