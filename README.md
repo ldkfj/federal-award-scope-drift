@@ -72,7 +72,7 @@ python -m pytest tests/test_contract.py -q
 genvm-lint check contracts/FederalAwardScopeDrift.py
 ```
 
-Current local result: 40/40 frontend tests, 28/28 Direct Mode contract tests, production build pass, semantic lint/validation pass, `pip check` pass, and npm audit with zero known vulnerabilities.
+Current local result: 40/40 frontend tests, 28/28 Direct Mode contract tests, production build pass, AST lint pass, `pip check` pass, and npm audit with zero known vulnerabilities. Semantic validation was not rerun because its cached runner archive is absent; no download was attempted.
 
 Direct Mode in `genlayer-test` currently has a Windows temporary-file cleanup incompatibility. On Windows, use WSL or an isolated wrapper that only tolerates `WinError 32` for its own temporary directory. The pytest assertions and exit status must still pass; a cleanup workaround alone is not evidence.
 
