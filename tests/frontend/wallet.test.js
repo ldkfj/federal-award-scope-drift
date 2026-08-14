@@ -200,6 +200,24 @@ test("valid OKX with a MetaMask compatibility flag remains exact-object callable
   discovery.cleanup();
 });
 
+test("OKX native namespace bypasses an aggregate announced provider", async () => {
+  const target = new FakeTarget();
+  const aggregate = fakeProvider();
+  const okx = fakeProvider();
+  const globalRouter = fakeProvider();
+  target.okxwallet = { ethereum: okx };
+  target.ethereum = globalRouter;
+  const discovery = createWalletDiscovery(target);
+  target.dispatchEvent(announcement("okx", aggregate, "OKX Wallet", "com.okex.wallet"));
+  const selected = discovery.getProviders()[0];
+  assert.equal(selected.provider, okx);
+  await connectInjectedWallet(selected.provider, STUDIONET_WALLET_CHAIN, selected.callLedger);
+  assert.deepEqual(okx.calls.map((call) => call.method), selected.callLedger);
+  assert.deepEqual(aggregate.calls, []);
+  assert.deepEqual(globalRouter.calls, []);
+  discovery.cleanup();
+});
+
 test("unknown announcement metadata is display-only and remains neutral", () => {
   const target = new FakeTarget();
   const discovery = createWalletDiscovery(target);

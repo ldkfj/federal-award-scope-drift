@@ -35,6 +35,12 @@ const KNOWN_PROVIDER_NAMES = new Map([
   ["app.phantom", "Phantom"],
 ]);
 
+function resolveAnnouncedProvider(target, rdns, announcedProvider) {
+  if (rdns !== "com.okex.wallet") return announcedProvider;
+  const namespaced = target.okxwallet?.ethereum ?? target.okxwallet;
+  return validProvider(namespaced) ? namespaced : announcedProvider;
+}
+
 export function createDisconnectedWalletSession() {
   return { account: "", selectedProvider: null, writeClient: null };
 }
@@ -61,9 +67,10 @@ export function createWalletDiscovery(target = window, onChange = () => {}, fall
 
   const announce = (event) => {
     if (cleanedUp) return;
-    const { info, provider } = event?.detail ?? {};
-    if (!validAnnouncementInfo(info) || !validProvider(provider)) return;
+    const { info, provider: announcedProvider } = event?.detail ?? {};
+    if (!validAnnouncementInfo(info) || !validProvider(announcedProvider)) return;
     const rdns = safeLabel(info.rdns, "").toLowerCase();
+    const provider = resolveAnnouncedProvider(target, rdns, announcedProvider);
 
     clearFallbackTimer();
     options.delete(fallbackId);
