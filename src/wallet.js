@@ -23,6 +23,20 @@ function validUuid(value) {
 }
 
 const UNSUPPORTED_PROVIDER_RDNS = new Set(["app.phantom"]);
+const PROVIDER_DISPLAY_NAMES = new Map([
+  ["com.okex.wallet", "OKX Wallet"],
+  ["io.metamask", "MetaMask"],
+]);
+
+function conflictsWithAnnouncedIdentity(rdns, provider) {
+  try {
+    if (rdns === "com.okex.wallet") return Boolean(provider.isMetaMask || provider.isPhantom);
+    if (rdns === "io.metamask") return Boolean(provider.isOkxWallet || provider.isPhantom);
+  } catch {
+    return true;
+  }
+  return false;
+}
 
 export function createWalletDiscovery(target = window, onChange = () => {}, fallbackDelayMs = 150) {
   const options = new Map();
@@ -48,7 +62,8 @@ export function createWalletDiscovery(target = window, onChange = () => {}, fall
     if (cleanedUp) return;
     const { info, provider } = event?.detail ?? {};
     if (!validUuid(info?.uuid) || !validProvider(provider)) return;
-    if (UNSUPPORTED_PROVIDER_RDNS.has(String(info?.rdns ?? "").trim().toLowerCase())) return;
+    const rdns = safeLabel(info?.rdns, "").toLowerCase();
+    if (UNSUPPORTED_PROVIDER_RDNS.has(rdns) || conflictsWithAnnouncedIdentity(rdns, provider)) return;
 
     clearFallbackTimer();
     options.delete(fallbackId);
@@ -61,8 +76,8 @@ export function createWalletDiscovery(target = window, onChange = () => {}, fall
     const option = {
       id,
       uuid,
-      name: safeLabel(info.name, "Browser wallet"),
-      rdns: safeLabel(info.rdns, ""),
+      name: PROVIDER_DISPLAY_NAMES.get(rdns) ?? "Browser wallet",
+      rdns,
       icon: typeof info.icon === "string" && info.icon.length <= 100_000 ? info.icon : "",
       provider,
     };
