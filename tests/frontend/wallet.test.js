@@ -17,8 +17,20 @@ const ACCOUNT_B = "0x2222222222222222222222222222222222222222";
 class FakeTarget extends EventTarget {}
 
 test("an in-flight request keeps the provider that actually received it selected", () => {
-  assert.equal(selectWalletProvider("metamask", "okx", "metamask"), "metamask");
-  assert.equal(selectWalletProvider("metamask", "okx", ""), "okx");
+  const metamask = { id: "metamask", provider: fakeProvider() };
+  const okx = { id: "okx", provider: fakeProvider() };
+  assert.equal(selectWalletProvider(metamask, okx, "metamask"), metamask);
+  assert.equal(selectWalletProvider(metamask, okx, ""), okx);
+});
+
+test("a selected option retains its exact provider object across discovery replacement", () => {
+  const selectedProvider = fakeProvider();
+  const replacementProvider = fakeProvider();
+  const selected = { id: "shared-id", provider: selectedProvider };
+  const replacement = { id: "shared-id", provider: replacementProvider };
+  const captured = selectWalletProvider(null, selected, "");
+  assert.equal(captured.provider, selectedProvider);
+  assert.notEqual(captured.provider, replacement.provider);
 });
 
 function announcement(uuid, provider, name = "Test wallet", rdns = "test.wallet") {

@@ -39,6 +39,7 @@ const state = {
   award: null,
   providers: [],
   selectedProviderId: "",
+  selectedProviderOption: null,
   connectingProviderId: "",
   account: "",
   selectedProvider: null,
@@ -201,14 +202,15 @@ function renderProviders() {
     }
     button.dataset.providerId = item.id;
     button.disabled = Boolean(state.connectingProviderId);
-    button.setAttribute("aria-pressed", String(item.id === state.selectedProviderId));
+    button.setAttribute("aria-pressed", String(item.provider === state.selectedProviderOption?.provider));
     button.addEventListener("click", () => {
-      state.selectedProviderId = selectWalletProvider(
-        state.selectedProviderId,
-        item.id,
+      state.selectedProviderOption = selectWalletProvider(
+        state.selectedProviderOption,
+        item,
         state.connectingProviderId,
       );
       if (state.connectingProviderId) return;
+      state.selectedProviderId = state.selectedProviderOption.id;
       elements.confirmWallet.disabled = false;
       elements.walletError.hidden = true;
       renderProviders();
@@ -329,6 +331,7 @@ function bindSelectedProvider(provider) {
 elements.connect.addEventListener("click", () => {
   state.providers = discovery.refresh();
   state.selectedProviderId = "";
+  state.selectedProviderOption = null;
   elements.confirmWallet.disabled = true;
   elements.walletError.hidden = true;
   renderProviders();
@@ -339,7 +342,7 @@ elements.walletClose.addEventListener("click", () => dialogBoundary.close());
 
 elements.confirmWallet.addEventListener("click", async () => {
   if (state.connectingProviderId) return;
-  const selected = state.providers.find((item) => item.id === state.selectedProviderId);
+  const selected = state.selectedProviderOption;
   if (!selected) return;
   state.connectingProviderId = selected.id;
   renderProviders();
