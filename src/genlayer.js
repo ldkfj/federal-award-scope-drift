@@ -32,8 +32,8 @@ export async function readContract(functionName, args = []) {
   });
 }
 
-export async function makeWriteClient(provider, account) {
-  const client = createClient({ chain: studionet, account, provider });
+export async function makeWriteClient(provider, account, clientFactory = createClient) {
+  const client = clientFactory({ chain: studionet, account, provider });
   await client.connect("studionet");
   return client;
 }

@@ -4,8 +4,10 @@ Federal Award Scope Drift freezes a public statement about one U.S. federal defi
 
 ## Verified links
 
-- Live app: not deployed yet; the current checkpoint is pre-deployment.
-- Studionet contract and Explorer: not created until the governed `PRE_DEPLOY` review passes and the deployment wallet is confirmed.
+- Live app: pending the governed Vercel release gate.
+- Studionet contract: [`0xEd657FCFB310519f89a3208DE0f996898A8c9d69`](https://explorer-studio.genlayer.com/address/0xEd657FCFB310519f89a3208DE0f996898A8c9d69)
+- Deployment transaction: [`0x11ccde8ea1af97f60fc712cc171adea8882647200be384bd53f998184c87b8ce`](https://explorer-studio.genlayer.com/tx/0x11ccde8ea1af97f60fc712cc171adea8882647200be384bd53f998184c87b8ce)
+- Reproducible evidence: [`docs/VERIFICATION.md`](docs/VERIFICATION.md)
 
 ## Trust problem
 
@@ -40,7 +42,7 @@ This is a non-economic project: no GEN, escrow, payout, bond, stake, or payment 
 
 ## Transaction lifecycle
 
-The browser requires explicit provider and account selection before signing. Each pending write stores its Studionet contract binding, authoritative pre-state, and method-specific expected postcondition across reloads. A retry remains blocked until the original transaction is reconciled. A write is displayed as successful only when its transaction is `FINALIZED`, a leader execution completed successfully, and contract readback matches the intended registration, freeze transition, or exact appended assessment revision. Pending, disagreement, execution failure, decode failure, and readback mismatch remain visible recoverable errors.
+The browser requires explicit selection of an announced EIP-6963/EIP-1193 provider before requesting an account, binds writes to that exact provider and account, and revalidates GenLayer Studionet. Each pending write stores its Studionet contract binding, authoritative pre-state, and method-specific expected postcondition across reloads. A retry remains blocked until the original transaction is reconciled. A write is displayed as successful only when its transaction is `FINALIZED`, a leader execution completed successfully, and contract readback matches the intended registration, freeze transition, or exact appended assessment revision. Pending, disagreement, execution failure, decode failure, and readback mismatch remain visible recoverable errors.
 
 ## Run locally
 
@@ -70,15 +72,15 @@ python -m pytest tests/test_contract.py -q
 genvm-lint check contracts/FederalAwardScopeDrift.py
 ```
 
-Current local result: 14/14 frontend tests, 28/28 Direct Mode contract tests, production build pass, semantic lint/validation pass, `pip check` pass, and npm audit with zero known vulnerabilities.
+Current local result: 30/30 frontend tests, 28/28 Direct Mode contract tests, production build pass, semantic lint/validation pass, `pip check` pass, and npm audit with zero known vulnerabilities.
 
 Direct Mode in `genlayer-test` currently has a Windows temporary-file cleanup incompatibility. On Windows, use WSL or an isolated wrapper that only tolerates `WinError 32` for its own temporary directory. The pytest assertions and exit status must still pass; a cleanup workaround alone is not evidence.
 
 ## Deployment
 
-Target network: GenLayer Studionet, chain ID `61999`, RPC `https://studio.genlayer.com/api`. Deployment classification: `UPGRADABLE`. The deploying Studio account is stored as the sole initial upgrader in the Root Slot and is also checked by the public `upgrade(bytes)` method. Storage fields must retain their order and types unless a separately reviewed migration is approved.
+Network: GenLayer Studionet, chain ID `61999`, RPC `https://studio.genlayer.com/api`. Deployment classification: `UPGRADABLE`. The deployed contract source is 20,934 UTF-8 bytes with SHA-256 `579d4c55a86176b1989c323cdb99726aff110da54f85216e7559f52399be0746`, matching [`contracts/FederalAwardScopeDrift.py`](contracts/FederalAwardScopeDrift.py). The deployer/upgrader is `0x92ec8364dA5B80b3DAAb921f3fBBB5F807DaF2Fe`.
 
-No deployment is authorized until an exact-revision anonymous `PRE_DEPLOY` review approves the package and the user confirms the selected Studio wallet. Post-deployment acceptance additionally requires `FINALIZED`/successful deployment evidence, address/upgrader readback, deployed-source parity, live write/readback tests, and an isolated upgrade rehearsal.
+Deployment, the complete live matrix, and an isolated exact-source upgrade rehearsal passed anonymous `POST_DEPLOY_TEST` review. See [`docs/VERIFICATION.md`](docs/VERIFICATION.md) for transaction-bound evidence and recovery limitations.
 
 ## Security and trust boundaries
 
@@ -94,4 +96,5 @@ No deployment is authorized until an exact-revision anonymous `PRE_DEPLOY` revie
 - MVP scope is prime definitive contracts (`type D`) with at most 100 returned transactions; it excludes grants, subawards, and indefinite-delivery vehicles.
 - USAspending obligations are not expenditures, and verdicts are monitoring signals—not findings of fraud, performance ratings, proof of delivery, or legal/payment decisions.
 - Public web content and USAspending data can change during consensus, producing `UNRESOLVED` until a later reassessment.
-- Studionet is temporary. The source is locally verified but has no deployed contract, Explorer evidence, public repository, or live app at this checkpoint.
+- Wallet support is limited to injected browser EIP-1193 providers. This release does not claim WalletConnect, mobile, hardware-wallet, or smart-account support.
+- Studionet is temporary; a network reset destroys the address and state. The public repository and final Vercel URL remain gated release artifacts until published.

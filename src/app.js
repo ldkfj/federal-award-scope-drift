@@ -24,7 +24,14 @@ import {
   submitWrite,
   waitForSuccessfulFinalization,
 } from "./genlayer.js";
-import { discoverWalletProviders, requestWalletAccount } from "./wallet.js";
+import {
+  STUDIONET_WALLET_CHAIN,
+  bindProviderSession,
+  connectInjectedWallet,
+  createDialogBoundary,
+  createWalletDiscovery,
+  showChooserError,
+} from "./wallet.js";
 
 const PENDING_KEY = "fasd.pending-write.v1";
 const state = {
@@ -32,6 +39,7 @@ const state = {
   providers: [],
   selectedProviderId: "",
   account: "",
+  selectedProvider: null,
   writeClient: null,
   claimId: "",
   claim: null,
@@ -40,8 +48,11 @@ const state = {
 };
 
 const elements = {
+  appShell: document.querySelector("#app-shell"),
   connect: document.querySelector("#connect-wallet"),
   walletDialog: document.querySelector("#wallet-dialog"),
+  walletClose: document.querySelector("#wallet-close"),
+  walletError: document.querySelector("#wallet-error"),
   walletOptions: document.querySelector("#wallet-options"),
   confirmWallet: document.querySelector("#confirm-wallet"),
   awardForm: document.querySelector("#award-lookup-form"),
@@ -184,6 +195,7 @@ function renderProviders() {
     button.addEventListener("click", () => {
       state.selectedProviderId = item.id;
       elements.confirmWallet.disabled = false;
+      elements.walletError.hidden = true;
       renderProviders();
     });
     elements.walletOptions.append(button);
@@ -258,29 +270,79 @@ async function reconcilePending() {
   }
 }
 
+const discovery = createWalletDiscovery(window, (providers) => {
+  state.providers = providers;
+  if (elements.walletDialog.open) renderProviders();
+});
+const dialogBoundary = createDialogBoundary(elements.walletDialog, elements.appShell, elements.walletClose);
+let cleanupProviderSession = () => {};
+
+function clearWalletSession(message = "Choose wallet") {
+  cleanupProviderSession();
+  cleanupProviderSession = () => {};
+  state.account = "";
+  state.selectedProvider = null;
+  state.writeClient = null;
+  elements.connect.textContent = message;
+  setWriteLock(state.pendingLocked);
+}
+
+function bindSelectedProvider(provider) {
+  cleanupProviderSession();
+  cleanupProviderSession = bindProviderSession(provider, {
+    async onAccountsChanged(account) {
+      if (!account) return clearWalletSession("Choose wallet");
+      try {
+        state.account = account;
+        state.writeClient = await makeWriteClient(provider, account);
+        elements.connect.textContent = shortenAddress(account);
+        setWriteLock(state.pendingLocked);
+      } catch (error) {
+        clearWalletSession("Reconnect wallet");
+        announce(`Wallet account update failed. ${error.message}`, "error", 0);
+      }
+    },
+    onChainChanged(chainId) {
+      if (chainId !== STUDIONET_WALLET_CHAIN.chainId) {
+        clearWalletSession("Reconnect on Studionet");
+        announce("The selected wallet left GenLayer Studionet. Reconnect before sending a write.", "error", 0);
+      }
+    },
+  });
+}
+
 elements.connect.addEventListener("click", () => {
-  state.providers = discoverWalletProviders();
+  state.providers = discovery.refresh();
   state.selectedProviderId = "";
   elements.confirmWallet.disabled = true;
+  elements.walletError.hidden = true;
   renderProviders();
-  elements.walletDialog.showModal();
+  dialogBoundary.open(elements.connect);
 });
+
+elements.walletClose.addEventListener("click", () => dialogBoundary.close());
 
 elements.confirmWallet.addEventListener("click", async () => {
   const selected = state.providers.find((item) => item.id === state.selectedProviderId);
   if (!selected) return;
   setButton(elements.confirmWallet, "loading", "Connecting…");
   try {
-    state.account = await requestWalletAccount(selected.provider);
+    state.account = await connectInjectedWallet(selected.provider);
+    state.selectedProvider = selected.provider;
     state.writeClient = await makeWriteClient(selected.provider, state.account);
+    bindSelectedProvider(selected.provider);
     setWriteLock(state.pendingLocked);
     elements.connect.textContent = shortenAddress(state.account);
-    elements.walletDialog.close();
+    dialogBoundary.close();
     setButton(elements.confirmWallet, "success", "Connected");
     if (state.claimId) await loadClaim(state.claimId);
   } catch (error) {
+    state.account = "";
+    state.selectedProvider = null;
+    state.writeClient = null;
+    setWriteLock(state.pendingLocked);
     setButton(elements.confirmWallet, "error", "Try connection again");
-    announce(`Wallet connection failed. ${error.message} Confirm the selected wallet is unlocked and on Studionet.`, "error", 0);
+    showChooserError(elements.walletError, error);
   }
 });
 
@@ -419,3 +481,9 @@ const deployment = deploymentState();
 if (!deployment.ready) announce(`${deployment.message} Read-only award preview remains available; contract writes are disabled.`, "warning", 0);
 setWriteLock(Boolean(localStorage.getItem(PENDING_KEY)));
 void reconcilePending();
+
+window.addEventListener("pagehide", () => {
+  cleanupProviderSession();
+  discovery.cleanup();
+  dialogBoundary.cleanup();
+}, { once: true });
