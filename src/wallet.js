@@ -22,6 +22,33 @@ function validUuid(value) {
   return typeof value === "string" && value.trim().length > 0 && value.trim().length <= 128;
 }
 
+const KNOWN_PROVIDER_NAMES = new Map([
+  ["com.okex.wallet", "OKX Wallet"],
+  ["io.metamask", "MetaMask"],
+  ["app.phantom", "Phantom"],
+]);
+
+function providerIdentityMarkers(provider) {
+  try {
+    return [
+      provider.isOkxWallet || provider.isOKExWallet ? "com.okex.wallet" : "",
+      provider.isMetaMask ? "io.metamask" : "",
+      provider.isPhantom ? "app.phantom" : "",
+    ].filter(Boolean);
+  } catch {
+    return ["unreadable-provider-identity"];
+  }
+}
+
+function validAnnouncedIdentity(rdns, markers) {
+  if (markers.includes("unreadable-provider-identity") || new Set(markers).size > 1) return false;
+  return markers.length === 0 || !KNOWN_PROVIDER_NAMES.has(rdns) || markers[0] === rdns;
+}
+
+export function createDisconnectedWalletSession() {
+  return { account: "", selectedProvider: null, writeClient: null };
+}
+
 export function createWalletDiscovery(target = window, onChange = () => {}, fallbackDelayMs = 150) {
   const options = new Map();
   const uuidToId = new Map();
@@ -46,6 +73,9 @@ export function createWalletDiscovery(target = window, onChange = () => {}, fall
     if (cleanedUp) return;
     const { info, provider } = event?.detail ?? {};
     if (!validUuid(info?.uuid) || !validProvider(provider)) return;
+    const rdns = safeLabel(info.rdns, "").toLowerCase();
+    const identityMarkers = providerIdentityMarkers(provider);
+    if (!validAnnouncedIdentity(rdns, identityMarkers)) return;
 
     clearFallbackTimer();
     options.delete(fallbackId);
@@ -56,13 +86,16 @@ export function createWalletDiscovery(target = window, onChange = () => {}, fall
     if (providerId && options.get(providerId)?.uuid !== uuid) return;
     const id = uuidId ?? providerId ?? `announced-provider-${nextId++}`;
     const previous = options.get(id);
+    if (previous?.rdns && rdns && previous.rdns !== rdns) return;
     const option = {
       id,
       uuid,
-      name: safeLabel(info.name, "Browser wallet"),
-      rdns: safeLabel(info.rdns, ""),
+      name: KNOWN_PROVIDER_NAMES.get(rdns) ?? "Browser wallet",
+      rdns,
       icon: typeof info.icon === "string" && info.icon.length <= 100_000 ? info.icon : "",
       provider,
+      identityMarkers,
+      callLedger: previous?.callLedger ?? [],
     };
     options.set(id, option);
     if (previous?.uuid && previous.uuid !== uuid) uuidToId.delete(previous.uuid);
@@ -87,6 +120,8 @@ export function createWalletDiscovery(target = window, onChange = () => {}, fall
           rdns: "",
           icon: "",
           provider: target.ethereum,
+          identityMarkers: [],
+          callLedger: [],
         });
         notify();
       }, fallbackDelayMs);
@@ -125,21 +160,25 @@ function errorCode(error) {
   return error?.code ?? error?.data?.originalError?.code ?? error?.cause?.code;
 }
 
-export async function connectInjectedWallet(provider, chain = STUDIONET_WALLET_CHAIN) {
+export async function connectInjectedWallet(provider, chain = STUDIONET_WALLET_CHAIN, callLedger = []) {
   if (!validProvider(provider)) throw new Error("The selected wallet provider is unavailable.");
-  const accounts = await provider.request({ method: "eth_requestAccounts" });
+  const request = (payload) => {
+    callLedger.push(payload.method);
+    return provider.request(payload);
+  };
+  const accounts = await request({ method: "eth_requestAccounts" });
   const account = Array.isArray(accounts) ? accounts[0] : "";
   if (!ADDRESS_PATTERN.test(account ?? "")) throw new Error("The selected wallet did not return a valid account.");
 
   try {
-    await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: chain.chainId }] });
+    await request({ method: "wallet_switchEthereumChain", params: [{ chainId: chain.chainId }] });
   } catch (error) {
     if (Number(errorCode(error)) !== 4902) throw error;
-    await provider.request({ method: "wallet_addEthereumChain", params: [chain] });
-    await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: chain.chainId }] });
+    await request({ method: "wallet_addEthereumChain", params: [chain] });
+    await request({ method: "wallet_switchEthereumChain", params: [{ chainId: chain.chainId }] });
   }
 
-  const activeChainId = normalizeChainId(await provider.request({ method: "eth_chainId" }));
+  const activeChainId = normalizeChainId(await request({ method: "eth_chainId" }));
   if (activeChainId !== normalizeChainId(chain.chainId)) {
     throw new Error("The selected wallet did not activate GenLayer Studionet.");
   }

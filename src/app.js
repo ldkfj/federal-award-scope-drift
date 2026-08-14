@@ -29,6 +29,7 @@ import {
   bindProviderSession,
   connectInjectedWallet,
   createDialogBoundary,
+  createDisconnectedWalletSession,
   createWalletDiscovery,
   selectWalletProvider,
   showChooserError,
@@ -41,9 +42,7 @@ const state = {
   selectedProviderId: "",
   selectedProviderOption: null,
   connectingProviderId: "",
-  account: "",
-  selectedProvider: null,
-  writeClient: null,
+  ...createDisconnectedWalletSession(),
   claimId: "",
   claim: null,
   assessment: null,
@@ -201,6 +200,8 @@ function renderProviders() {
       button.append(rdns);
     }
     button.dataset.providerId = item.id;
+    button.dataset.providerRdns = item.rdns;
+    button.dataset.providerMarkers = item.identityMarkers.join(",");
     button.disabled = Boolean(state.connectingProviderId);
     button.setAttribute("aria-pressed", String(item.provider === state.selectedProviderOption?.provider));
     button.addEventListener("click", () => {
@@ -348,7 +349,11 @@ elements.confirmWallet.addEventListener("click", async () => {
   renderProviders();
   setButton(elements.confirmWallet, "loading", "Connecting…");
   try {
-    state.account = await connectInjectedWallet(selected.provider);
+    selected.callLedger.length = 0;
+    elements.walletDialog.dataset.providerRdns = selected.rdns;
+    elements.walletDialog.dataset.providerMarkers = selected.identityMarkers.join(",");
+    state.account = await connectInjectedWallet(selected.provider, STUDIONET_WALLET_CHAIN, selected.callLedger);
+    elements.walletDialog.dataset.providerMethods = selected.callLedger.join(",");
     state.selectedProvider = selected.provider;
     state.writeClient = await makeWriteClient(selected.provider, state.account);
     bindSelectedProvider(selected.provider);
@@ -358,6 +363,7 @@ elements.confirmWallet.addEventListener("click", async () => {
     setButton(elements.confirmWallet, "success", "Connected");
     if (state.claimId) await loadClaim(state.claimId);
   } catch (error) {
+    elements.walletDialog.dataset.providerMethods = selected.callLedger.join(",");
     state.account = "";
     state.selectedProvider = null;
     state.writeClient = null;

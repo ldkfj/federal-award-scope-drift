@@ -6,6 +6,7 @@ import {
   bindProviderSession,
   connectInjectedWallet,
   createDialogBoundary,
+  createDisconnectedWalletSession,
   createWalletDiscovery,
   selectWalletProvider,
   showChooserError,
@@ -31,6 +32,14 @@ test("a selected option retains its exact provider object across discovery repla
   const captured = selectWalletProvider(null, selected, "");
   assert.equal(captured.provider, selectedProvider);
   assert.notEqual(captured.provider, replacement.provider);
+});
+
+test("a full reload begins with a fresh disconnected wallet session", () => {
+  const first = createDisconnectedWalletSession();
+  first.account = ACCOUNT_A;
+  first.selectedProvider = fakeProvider();
+  const reloaded = createDisconnectedWalletSession();
+  assert.deepEqual(reloaded, { account: "", selectedProvider: null, writeClient: null });
 });
 
 function announcement(uuid, provider, name = "Test wallet", rdns = "test.wallet") {
@@ -101,7 +110,7 @@ test("discovery exposes two announcements and deduplicates repeated UUID and ide
   const discovery = createWalletDiscovery(target);
   const providers = discovery.refresh();
   assert.equal(providers.length, 2);
-  assert.equal(providers.find((item) => item.provider === first).name, "Updated name");
+  assert.equal(providers.find((item) => item.provider === first).name, "Browser wallet");
   discovery.cleanup();
 });
 
@@ -132,23 +141,34 @@ test("legacy provider is delayed, neutral, and replaced by a late EIP-6963 annou
   await wait();
   assert.equal(discovery.getProviders()[0].provider, legacy);
   assert.equal(discovery.getProviders()[0].name, "Injected wallet");
+  assert.deepEqual(discovery.getProviders()[0].identityMarkers, []);
+  assert.deepEqual(discovery.getProviders()[0].callLedger, []);
   target.dispatchEvent(announcement("announced", announced));
   assert.deepEqual(discovery.getProviders().map((item) => item.provider), [announced]);
   discovery.cleanup();
 });
 
 test("selecting each announced wallet routes every connection RPC to that exact object", async () => {
-  const wallets = ["OKX Wallet", "MetaMask", "Phantom"].map((name) => ({ name, provider: fakeProvider() }));
+  const wallets = [
+    { name: "OKX Wallet", rdns: "com.okex.wallet", marker: "isOkxWallet" },
+    { name: "MetaMask", rdns: "io.metamask", marker: "isMetaMask" },
+    { name: "Phantom", rdns: "app.phantom", marker: "isPhantom" },
+  ].map((wallet) => {
+    const provider = fakeProvider();
+    provider[wallet.marker] = true;
+    return { ...wallet, provider };
+  });
   const target = new FakeTarget();
   target.addEventListener("eip6963:requestProvider", () => {
-    wallets.forEach(({ name, provider }, index) => target.dispatchEvent(announcement(`wallet-${index}`, provider, name)));
+    wallets.forEach(({ name, rdns, provider }, index) => target.dispatchEvent(announcement(`wallet-${index}`, provider, name, rdns)));
   });
   const discovery = createWalletDiscovery(target);
   const options = discovery.refresh();
 
   for (const option of options) {
     wallets.forEach(({ provider }) => { provider.calls.length = 0; });
-    await connectInjectedWallet(option.provider);
+    await connectInjectedWallet(option.provider, STUDIONET_WALLET_CHAIN, option.callLedger);
+    assert.deepEqual(option.callLedger, ["eth_requestAccounts", "wallet_switchEthereumChain", "eth_chainId"]);
     for (const { provider } of wallets) {
       assert.deepEqual(
         provider.calls.map((call) => call.method),
@@ -158,6 +178,32 @@ test("selecting each announced wallet routes every connection RPC to that exact 
       );
     }
   }
+  discovery.cleanup();
+});
+
+test("forged named metadata and aggregate routers never create callable named options", () => {
+  const cases = [
+    { rdns: "com.okex.wallet", flags: { isMetaMask: true } },
+    { rdns: "com.okex.wallet", flags: { isPhantom: true } },
+    { rdns: "io.metamask", flags: { isOkxWallet: true } },
+    { rdns: "app.phantom", flags: { isMetaMask: true, isPhantom: true } },
+  ];
+  for (const [index, entry] of cases.entries()) {
+    const target = new FakeTarget();
+    const provider = Object.assign(fakeProvider(), entry.flags);
+    const discovery = createWalletDiscovery(target);
+    target.dispatchEvent(announcement(`forged-${index}`, provider, "Forged wallet", entry.rdns));
+    assert.deepEqual(discovery.getProviders(), []);
+    assert.deepEqual(provider.calls, []);
+    discovery.cleanup();
+  }
+});
+
+test("unknown announcement metadata is display-only and remains neutral", () => {
+  const target = new FakeTarget();
+  const discovery = createWalletDiscovery(target);
+  target.dispatchEvent(announcement("unknown", fakeProvider(), "Pretend OKX", "unknown.wallet"));
+  assert.equal(discovery.getProviders()[0].name, "Browser wallet");
   discovery.cleanup();
 });
 
