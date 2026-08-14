@@ -32,7 +32,6 @@ function validAnnouncementInfo(info) {
 const KNOWN_PROVIDER_NAMES = new Map([
   ["com.okex.wallet", "OKX Wallet"],
   ["io.metamask", "MetaMask"],
-  ["app.phantom", "Phantom"],
 ]);
 
 function resolveAnnouncedProvider(target, rdns, announcedProvider) {
@@ -45,21 +44,14 @@ export function createDisconnectedWalletSession() {
   return { account: "", selectedProvider: null, writeClient: null };
 }
 
-export function createWalletDiscovery(target = window, onChange = () => {}, fallbackDelayMs = 150) {
+export function createWalletDiscovery(target = window, onChange = () => {}) {
   const options = new Map();
   const uuidToId = new Map();
-  const fallbackId = "legacy-injected-provider";
   let nextId = 1;
   let cleanedUp = false;
-  let fallbackTimer;
 
   const notify = () => onChange([...options.values()]);
   const findProviderId = (provider) => [...options].find(([, option]) => option.provider === provider)?.[0];
-  const clearFallbackTimer = () => {
-    if (fallbackTimer === undefined) return;
-    clearTimeout(fallbackTimer);
-    fallbackTimer = undefined;
-  };
   const rebuildUuidIndex = () => {
     uuidToId.clear();
     for (const [id, option] of options) if (option.uuid) uuidToId.set(option.uuid, id);
@@ -70,10 +62,9 @@ export function createWalletDiscovery(target = window, onChange = () => {}, fall
     const { info, provider: announcedProvider } = event?.detail ?? {};
     if (!validAnnouncementInfo(info) || !validProvider(announcedProvider)) return;
     const rdns = safeLabel(info.rdns, "").toLowerCase();
+    if (!KNOWN_PROVIDER_NAMES.has(rdns)) return;
     const provider = resolveAnnouncedProvider(target, rdns, announcedProvider);
 
-    clearFallbackTimer();
-    options.delete(fallbackId);
     const uuid = info.uuid.trim();
     const uuidId = uuidToId.get(uuid);
     const providerId = findProviderId(provider);
@@ -101,24 +92,7 @@ export function createWalletDiscovery(target = window, onChange = () => {}, fall
 
   function refresh() {
     if (cleanedUp) return [];
-    clearFallbackTimer();
     target.dispatchEvent(new Event("eip6963:requestProvider"));
-    if (options.size === 0) {
-      fallbackTimer = setTimeout(() => {
-        fallbackTimer = undefined;
-        if (cleanedUp || options.size > 0 || !validProvider(target.ethereum)) return;
-        options.set(fallbackId, {
-          id: fallbackId,
-          uuid: "",
-          name: "Injected wallet",
-          rdns: "",
-          icon: "",
-          provider: target.ethereum,
-          callLedger: [],
-        });
-        notify();
-      }, fallbackDelayMs);
-    }
     return [...options.values()];
   }
 
@@ -128,7 +102,6 @@ export function createWalletDiscovery(target = window, onChange = () => {}, fall
     cleanup() {
       if (cleanedUp) return;
       cleanedUp = true;
-      clearFallbackTimer();
       target.removeEventListener("eip6963:announceProvider", announce);
       options.clear();
     },
